@@ -13,9 +13,9 @@
     "start": "electron .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
     "package:mac": "npm run build && electron-builder --mac --dir",
-    "package:dmg": "npm run build && electron-builder --mac dmg"
+    "package:dmg": "npm run build && electron-builder --mac dmg",
+    "smoke": "node scripts/smoke/smoke.mjs"
   },
   "build": {
     "appId": "com.allpaper.desktop",
@@ -37,6 +37,7 @@
     }
   },
   "dependencies": {
+    "@tiptap/core": "^3.31.4",
     "@tiptap/extension-placeholder": "^3.31.4",
     "@tiptap/extension-task-item": "^3.31.4",
     "@tiptap/extension-task-list": "^3.31.4",
@@ -46,6 +47,7 @@
     "clsx": "^2.1.1",
     "dompurify": "^3.4.16",
     "katex": "^0.19.0",
+    "linkedom": "^0.18.13",
     "lucide-react": "^1.55.0",
     "pdfjs-dist": "^6.4.299",
     "react": "^19.3.0",

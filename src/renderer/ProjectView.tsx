@@ -1,5 +1,188 @@
-import {useEffect,useState}from'react';import{Download,Lightbulb,Plus,Save,Unlock,LockKeyhole,FlaskConical}from'lucide-react';import type{DraftDocument,Idea,Pilot,Project}from'../shared/projects';import{beginTranslation,editEnglish,hash,receiveTranslation,updateChinese,type DraftBlock}from'../core/draft';
-export function ProjectView(){const[projects,setProjects]=useState<Project[]>([]);const[current,setCurrent]=useState<Project>();const[name,setName]=useState('');const[tab,setTab]=useState<'ideas'|'writing'>('ideas');const[ideas,setIdeas]=useState<Idea[]>([]);const[ideaText,setIdeaText]=useState('');const[draft,setDraft]=useState<DraftDocument>();const load=async()=>{const ps=await window.allPaper.projects.list();setProjects(ps);if(!current&&ps[0])setCurrent(ps[0]);};useEffect(()=>{void load()},[]);useEffect(()=>{if(current){void window.allPaper.projects.ideas(current.id).then(setIdeas);void window.allPaper.projects.draft(current.id).then(d=>setDraft(d));}},[current?.id]);const create=async()=>{const p=await window.allPaper.projects.create(name);setName('');await load();setCurrent(p)};const addIdea=async()=>{if(!current||!ideaText.trim())return;const i=await window.allPaper.projects.createIdea(current.id,ideaText);setIdeas(x=>[...x,i]);setIdeaText('')};const saveDraft=async(next:DraftDocument)=>{setDraft(next);if(current)await window.allPaper.projects.saveDraft(current.id,next)};return <section className="project-page"><header><div><div className="eyebrow">研究项目</div><h1>项目工作台</h1></div><div className="create-project"><input value={name} onChange={e=>setName(e.target.value)} placeholder="新项目名称"/><button className="primary" onClick={()=>void create()}><Plus size={15}/> 新建项目</button></div></header>{projects.length?<><div className="project-tabs"><select value={current?.id} onChange={e=>setCurrent(projects.find(x=>x.id===e.target.value))}>{projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select><button className={tab==='ideas'?'active':''} onClick={()=>setTab('ideas')}>点子</button><button className={tab==='writing'?'active':''} onClick={()=>setTab('writing')}>双栏写作</button></div>{current&&tab==='ideas'&&<Ideas projectId={current.id} ideas={ideas} text={ideaText} setText={setIdeaText} add={addIdea}/>} {current&&tab==='writing'&&draft&&<Writing project={current} draft={draft} save={saveDraft}/>}</>:<div className="project-empty"><Lightbulb size={32}/><p>创建项目后，文献、点子、预实验与草稿都会在同一资料库目录中保存。</p></div>}</section>}
-function Ideas({projectId,ideas,text,setText,add}:{projectId:string;ideas:Idea[];text:string;setText:(s:string)=>void;add:()=>Promise<void>}){const[pilot,setPilot]=useState<Pilot>();return <div className="ideas-view"><div className="idea-quick"><input value={text} onChange={e=>setText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')void add()}} placeholder="一句话记下研究点子…"/><button className="primary" onClick={()=>void add()}><Plus size={15}/> 记录</button></div><div className="kanban">{(['idea','researching','pilot','validated','abandoned']as const).map(status=><section key={status}><h2>{{idea:'灵感',researching:'调研中',pilot:'预实验中',validated:'已验证',abandoned:'已放弃'}[status]}</h2>{ideas.filter(i=>i.status===status).map(i=><article key={i.id}><strong>{i.title}</strong><p>{i.oneLiner}</p><button className="pilot-button" onClick={async()=>setPilot(await window.allPaper.projects.createPilot(projectId,i))}><FlaskConical size={13}/> 生成预实验</button></article>)}</section>)}</div>{pilot&&<section className="pilot-result"><h2>预实验方案 · {pilot.experimentType}</h2>{Object.entries(pilot.sections).map(([title,value])=><div key={title}><h3>{title}</h3><textarea defaultValue={value}/></div>)}</section>}</div>}
-function Writing({project,draft,save}:{project:Project;draft:DraftDocument;save:(d:DraftDocument)=>Promise<void>}){const add=async()=>{const b:DraftBlock={id:crypto.randomUUID().slice(0,8),order:draft.blocks.length,type:'paragraph',zhText:'',enText:'',zhHash:hash(''),locked:false,status:'synced'};await save({...draft,blocks:[...draft.blocks,b]})};const changeZh=async(id:string,text:string)=>{const blocks=draft.blocks.map(b=>b.id===id?updateChinese(b,text):b);await save({...draft,blocks});setTimeout(async()=>{const current=blocks.find(x=>x.id===id);if(!current||current.status!=='pending')return;const started=blocks.map(x=>x.id===id?beginTranslation(x):x);await save({...draft,blocks:started});const english=await window.allPaper.ai.translateWriting(current.zhText);await save({...draft,blocks:started.map(x=>x.id===id?receiveTranslation(x,english):x)});},1500)};return <div className="writing-view"><div className="writing-toolbar"><button className="secondary" onClick={()=>void add()}><Plus size={15}/> 新段落</button><button className="secondary" onClick={()=>void window.allPaper.projects.exportLatex(project.id)}><Download size={15}/> 导出 LaTeX</button><span>停笔约 1.5 秒后翻译；直接改英文会锁定该段。</span></div>{draft.blocks.map(b=><div className="bilingual-block" key={b.id}><div><label>中文 <small>{statusName(b.status)}</small></label><textarea value={b.zhText} onChange={e=>void changeZh(b.id,e.target.value)} placeholder="写中文内容…"/></div><div><label>English {b.locked&&<LockKeyhole size={13}/>}</label><textarea value={b.enText} onChange={e=>void save({...draft,blocks:draft.blocks.map(x=>x.id===b.id?editEnglish(x,e.target.value):x)})} placeholder="English translation…"/>{b.locked&&<button className="unlock" onClick={()=>void save({...draft,blocks:draft.blocks.map(x=>x.id===b.id?{...x,locked:false,status:'pending'}:x)})}><Unlock size={12}/> 解锁自动翻译</button>}</div></div>)}{!draft.blocks.length&&<button className="new-block" onClick={()=>void add()}>开始写第一段中文</button>}</div>}
-const statusName=(s:string)=>({synced:'已同步',translating:'翻译中',locked:'英文已手改',changed:'中文已变更',failed:'翻译失败',pending:'待翻译'}[s]??s);
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Download, FileText, LockKeyhole, Plus, RotateCw, Sparkles, Trash2, Unlock } from 'lucide-react';
+import { beginTranslation, editEnglish, failTranslation, hash, receiveTranslation, unlock, updateChinese, type DraftBlock } from '../core/draft';
+import { citationsIn, type CitationRef } from '../core/note-markdown';
+import type { DraftDocument } from '../shared/projects';
+import type { Paper } from '../shared/types';
+import { AssistantPanel, type QuickAction } from './AssistantPanel';
+import { NoteEditor } from './notes/NoteEditor';
+import { appendToNote } from './notes/noteBus';
+import { ProjectPicker } from './notes/ProjectPicker';
+import { authorsShort, useWorkspace } from './workspace';
+
+export function ProjectView({ onOpenPaper }: { onOpenPaper(paper: Paper, anchor?: string): void }) {
+  const ws = useWorkspace();
+  const project = ws.currentProject;
+  const [tab, setTab] = useState<'note' | 'writing'>('note');
+  const [side, setSide] = useState<'assistant' | 'papers'>('assistant');
+  const [markdown, setMarkdown] = useState('');
+
+  const cited = useMemo(() => {
+    const seen = new Map<string, Paper>();
+    for (const ref of citationsIn(markdown)) {
+      const paper = ws.paperByKey(ref.key);
+      if (paper) seen.set(paper.id, paper);
+    }
+    return [...seen.values()];
+  }, [markdown, ws]);
+
+  const openCitation = (ref: CitationRef) => {
+    const paper = ws.paperByKey(ref.key);
+    if (paper) onOpenPaper(paper, ref.anchor);
+  };
+
+  if (!ws.projects.length || !project) {
+    return (
+      <section className="project-empty">
+        <FileText size={30} />
+        <h1>从一个研究项目开始</h1>
+        <p>每个项目有一份自己的笔记：读论文时的摘录、想到的点子、待验证的假设都写在这里，并保留到原文的出处。</p>
+        <ProjectPicker />
+      </section>
+    );
+  }
+
+  const actions: QuickAction[] = [
+    { label: '整理成点子', mode: 'ideas', prompt: '读一遍我的笔记，把其中值得做的研究点子整理出来：每个点子写动机、核心假设、大致方法和预期贡献。' },
+    { label: '设计预实验', mode: 'pilot', prompt: '针对我笔记中最有希望的点子，设计一份最小预实验方案。' },
+    { label: '梳理论点', prompt: '梳理我笔记中的论点和证据：哪些结论有文献支持，哪些还缺证据，下一步该读什么？' }
+  ];
+
+  return (
+    <section className="proj">
+      <header className="proj-top">
+        <div>
+          <div className="eyebrow">研究项目</div>
+          <ProjectPicker />
+        </div>
+        <div className="seg">
+          <button className={tab === 'note' ? 'on' : ''} onClick={() => setTab('note')}>笔记</button>
+          <button className={tab === 'writing' ? 'on' : ''} onClick={() => setTab('writing')}>双栏写作</button>
+        </div>
+      </header>
+      {tab === 'note' ? (
+        <div className="proj-body">
+          <div className="proj-note"><NoteEditor key={project.id} projectId={project.id} onOpenCitation={openCitation} onSaved={setMarkdown} /></div>
+          <aside className="proj-side">
+            <div className="rd-tabs">
+              <button className={side === 'assistant' ? 'on' : ''} onClick={() => setSide('assistant')}><Sparkles size={14} /> 助手</button>
+              <button className={side === 'papers' ? 'on' : ''} onClick={() => setSide('papers')}>引用的文献 {cited.length || ''}</button>
+            </div>
+            <div className="rd-tabbody">
+              {side === 'assistant'
+                ? <AssistantPanel scope={`project:${project.id}`} projectId={project.id} actions={actions} placeholder="助手会读取这份项目笔记。点“插入笔记”可把回答加到笔记末尾。" onInsert={(md) => void appendToNote(project.id, md)} />
+                : (
+                  <div className="cited">
+                    {cited.map((paper) => (
+                      <button key={paper.id} onClick={() => onOpenPaper(paper)}><strong>{paper.title}</strong><small>{authorsShort(paper)} · {paper.citekey}</small></button>
+                    ))}
+                    {!cited.length && <div className="panel-empty"><p>笔记里还没有引用文献。读论文时选中文字点“摘录”，或在笔记中输入 @ 引用。</p></div>}
+                  </div>
+                )}
+            </div>
+          </aside>
+        </div>
+      ) : <Writing key={project.id} projectId={project.id} />}
+    </section>
+  );
+}
+
+const statusName: Record<string, string> = { synced: '已同步', translating: '翻译中', locked: '英文已手改', changed: '中文已变更', failed: '翻译失败', pending: '待翻译' };
+
+function Writing({ projectId }: { projectId: string }) {
+  const { ai, settings, openSettings } = useWorkspace();
+  const [draft, setDraft] = useState<DraftDocument>();
+  const latest = useRef<DraftDocument | undefined>(undefined);
+  const timers = useRef(new Map<string, number>());
+  const saveTimer = useRef<number | undefined>(undefined);
+  const [message, setMessage] = useState<string>();
+
+  useEffect(() => {
+    let alive = true;
+    void window.allPaper.projects.draft(projectId).then((loaded) => { if (alive) { latest.current = loaded; setDraft(loaded); } });
+    return () => { alive = false; timers.current.forEach((t) => window.clearTimeout(t)); timers.current.clear(); };
+  }, [projectId]);
+
+  const commit = useCallback((change: (doc: DraftDocument) => DraftDocument) => {
+    if (!latest.current) return;
+    const next = change(latest.current);
+    latest.current = next;
+    setDraft(next);
+    window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => void window.allPaper.projects.saveDraft(projectId, next), 500);
+  }, [projectId]);
+
+  const update = (id: string, change: (block: DraftBlock) => DraftBlock) =>
+    commit((doc) => ({ ...doc, blocks: doc.blocks.map((block) => block.id === id ? change(block) : block) }));
+
+  const translate = useCallback(async (id: string) => {
+    const doc = latest.current;
+    const index = doc?.blocks.findIndex((b) => b.id === id) ?? -1;
+    const block = doc?.blocks[index];
+    if (!doc || !block || block.locked || !block.zhText.trim()) return;
+    update(id, beginTranslation);
+    try {
+      const english = await window.allPaper.ai.translateWriting(block.zhText, {
+        before: doc.blocks.slice(Math.max(0, index - 2), index).map((b) => b.zhText).join('\n'),
+        after: doc.blocks.slice(index + 1, index + 3).map((b) => b.zhText).join('\n'),
+        neighbourEnglish: doc.blocks[index - 1]?.enText
+      });
+      const sourceHash = hash(block.zhText);
+      update(id, (current) => current.zhHash === sourceHash ? receiveTranslation(current, english) : { ...current, status: 'pending' });
+      setMessage(undefined);
+    } catch (error) {
+      update(id, failTranslation);
+      setMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(error));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onChinese = (id: string, text: string) => {
+    update(id, (block) => updateChinese(block, text));
+    window.clearTimeout(timers.current.get(id));
+    if (!ai.configured) return;
+    timers.current.set(id, window.setTimeout(() => void translate(id), settings.translationDelayMs));
+  };
+
+  const add = () => commit((doc) => ({
+    ...doc,
+    blocks: [...doc.blocks, { id: crypto.randomUUID().slice(0, 8), order: doc.blocks.length, type: 'paragraph', zhText: '', enText: '', zhHash: hash(''), locked: false, status: 'synced' }]
+  }));
+
+  if (!draft) return <div className="rd-empty">加载中…</div>;
+  const waiting = draft.blocks.filter((b) => !b.locked && b.zhText.trim() && (b.status === 'pending' || b.status === 'failed'));
+
+  return (
+    <div className="writing">
+      <div className="writing-toolbar">
+        <button className="secondary" onClick={add}><Plus size={14} /> 新段落</button>
+        <button className="secondary" onClick={() => void window.allPaper.projects.exportLatex(projectId)}><Download size={14} /> 导出 LaTeX</button>
+        {!!waiting.length && ai.configured && <button className="secondary" onClick={() => waiting.forEach((b) => void translate(b.id))}><RotateCw size={14} /> 翻译 {waiting.length} 段待处理</button>}
+        <span>停笔 {Math.round(settings.translationDelayMs / 100) / 10} 秒后自动翻译；直接改英文会锁定该段。</span>
+      </div>
+      {!ai.configured && <div className="rd-banner">未配置模型服务，只能写中文；配置后点“翻译待处理段落”。<button className="text-button" onClick={openSettings}>前往设置</button></div>}
+      {message && <div className="rd-banner warn">{message}<button className="text-button" onClick={() => setMessage(undefined)}>知道了</button></div>}
+      {draft.blocks.map((block) => (
+        <div className="bilingual" key={block.id}>
+          <div>
+            <label>中文 <small className={`st st-${block.status}`}>{statusName[block.status] ?? block.status}</small></label>
+            <textarea
+              value={block.zhText} placeholder="写中文内容…"
+              onChange={(e) => onChinese(block.id, e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && e.metaKey) { e.preventDefault(); void translate(block.id); } }}
+            />
+          </div>
+          <div>
+            <label>English {block.locked && <LockKeyhole size={12} />}</label>
+            <textarea value={block.enText} placeholder="English translation…" onChange={(e) => update(block.id, (b) => editEnglish(b, e.target.value))} />
+            <div className="bilingual-actions">
+              {block.locked && <button onClick={() => { update(block.id, unlock); if (ai.configured) void translate(block.id); }}><Unlock size={12} /> 解锁并重新翻译</button>}
+              <button className="danger" onClick={() => commit((doc) => ({ ...doc, blocks: doc.blocks.filter((b) => b.id !== block.id) }))}><Trash2 size={12} /></button>
+            </div>
+          </div>
+        </div>
+      ))}
+      {!draft.blocks.length && <button className="new-block" onClick={add}>开始写第一段中文</button>}
+    </div>
+  );
+}

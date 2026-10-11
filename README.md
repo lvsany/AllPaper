@@ -1,6 +1,6 @@
 # AllPaper
 
-面向个人计算机科研的本地优先桌面工作台：收集/阅读论文、段落译文、论文笔记、点子与预实验、以及中英双栏写作。
+面向个人计算机科研的本地优先桌面工作台：搜集论文、像 arxiv.org/html 一样阅读并在每段下方显示译文、把摘录和想法记进项目笔记、用助手问答，以及中英双栏写作。
 
 ## 运行
 
@@ -11,51 +11,61 @@ npm install
 npm run dev
 ```
 
-首次启动选择一个资料库目录。应用会创建 `papers/`、`projects/`、`.index/` 等目录；资料库不应选在本仓库中。
-
-构建与打包：
+首次启动选择一个资料库目录（不要选在本仓库内）。应用会创建 `papers/`、`projects/`、`.index/`。
 
 ```bash
-npm run build
-npm test
-npm run package:mac
+npm test             # 单元测试
+npm run build        # 类型检查 + 构建
+npm run smoke        # 端到端冒烟（需先 build 和联网，见下）
+npm run package:mac  # 未签名 .app → release/mac-arm64/AllPaper.app
 npm run package:dmg
 ```
 
-未签名 macOS 应用位于 `release/mac-arm64/AllPaper.app`。本机 Gatekeeper 可能要求用户在 Finder 中右键“打开”。
+## 怎么用
 
-## API Key 与离线模式
+1. **入库**：文献库页顶部粘贴 arXiv 链接或编号（如 `2512.07404`、`arxiv.org/abs/…`），自动获取元数据、HTML 正文（arxiv.org/html，没有则 ar5iv）、PDF 和图片。也可拖入 PDF、导入 BibTeX，或在“搜索论文”里检索后入库。
+2. **阅读**：打开论文即为阅读视图——章节目录、公式（MathML）、图表、参考文献点击弹出信息；译文在每个段落下方，滚动时自动翻译可见区域及其后内容，结果按段缓存。顶部可切换 双语/原文/译文，也可随时切到原版 PDF。
+3. **记笔记**：每个项目只有一份笔记。阅读视图右侧栏的“笔记”就是它；选中文字点“摘录”，原文（可带译文）和出处以引用块加进去，点引用胶囊回到原文那一句。笔记里输入 `@` 引用文献库中的论文。
+4. **批注**：选中文字可高亮（四色：结论/质疑/可借鉴/方法）、写批注；“批注”标签页按颜色列出，可定位、改色、摘录。
+5. **助手**：侧栏“助手”读取当前论文全文（和项目笔记）回答问题；回答里的 `¶n` 是可点击的原文段落出处，指向不存在段落的引用会标“未核实”。“插入笔记”把回答加到项目笔记。
+6. **快速记点子**：`⌘⇧I`，一句话追加到当前项目的笔记。`⌘K` 搜索文献库全文。
 
-设置页选择 Anthropic 或 OpenAI 兼容接口并填写 Key 后点击“保存设置”。Key 通过 Electron `safeStorage` 加密，保存在应用数据目录，不写入资料库。默认 Mock 模式不需要 Key，并且录制的学术搜索结果、阅读译文、写作译文可离线使用。
+## 模型配置（重要）
 
-真实学术源仅在搜索页勾选“同时查询在线公开接口”时调用。真实接口尚未做验收验证。
+翻译、问答、划词解释、写作翻译都需要你自己的 API Key（设置 → 模型服务）：
+
+- **Anthropic**：填 Key 即可；模型名默认 `claude-haiku-5-5`（翻译）、`claude-sonnet-5-5`（问答与写作）、`claude-opus-5-5`（推理），可改。
+- **OpenAI 兼容接口**：填接口地址（含 `/v1`）和 Key；本地模型服务可不填 Key。
+
+未配置时，阅读、批注、笔记、全文检索、中文草稿编辑都能用，所有 AI 入口显示“未配置”，**不会**产出任何假译文。Key 经 Electron `safeStorage` 加密保存在应用数据目录，不写入资料库。设置页的“保存并测试连接”会真实发一次请求。
+
+> 自动化测试和冒烟脚本使用本地桩服务/`ALLPAPER_AI=mock`，它们验证的是应用的接线（流式、缓存、占位符还原、出处校验），不是真实模型的质量。
 
 ## 目录结构
 
 ```text
-electron/                 Electron 主进程与安全 preload
-src/core/                 可单测的 citekey、去重、正文、锚点、写作、LaTeX 逻辑
-src/main/                 文件、SQLite、论文、项目、AI/学术适配器
-src/renderer/             React 工作区界面
-fixtures/                 离线 BibTeX 录制样例
+electron/            主进程入口、preload（allpaper:// 协议、IPC）
+src/core/            可单测的纯逻辑：arXiv HTML 解析、笔记 Markdown、提示词、锚点、citekey、LaTeX…
+src/main/            论文库/项目存储、arXiv 获取、学术检索适配器、模型提供商与助手
+src/renderer/        React 界面（reader/ 阅读视图，notes/ 笔记编辑器）
+scripts/smoke/       端到端冒烟脚本
 ```
 
-资料库采用 PRD 规定的开放布局：每篇论文保存元数据、结构化正文、译文缓存、批注与笔记；项目保存项目设置、点子、预实验和草稿。
+资料库：
 
-## 实现决策
+```text
+papers/<citekey>-<id>/  meta.json  content.json  translation.zh.json  annotations.json  paper.pdf  assets/
+projects/<项目>/        project.json  note.md  drafts/paper-v1/{draft.json,zh.md,en.md}
+library.bib             自动维护的全库 BibTeX
+.index/                 SQLite 全文索引（可删除重建）
+```
 
-- 默认离线 Mock；网络检索是显式可选项，因此无 API Key/网络时主要流程仍可演示与测试。
-- 结构化阅读正文优先取 arXiv HTML，其次 ar5iv，最后 PDF 文本；正文均归一为段落数组。
-- 未配置真实翻译服务时，Mock 会保留公式/引用标记并产出明确标识的离线译文，避免冒充真实模型输出。
-- 论文笔记采用普通 Markdown，片段引用为 `[@citekey#anchor]`；锚点保存原文与上下文并在内容替换后重新匹配。
-- macOS 打包显式关闭签名，满足“可打包、不要求签名”。
-- 资料库备份使用 macOS 自带 `ditto` 创建 ZIP；Mock 用量以字符数折算 token，费用固定为 $0，真实提供商暂未返回计费数据。
+## 已知限制与未完成项
 
-## 未完成项与已知问题
+见 [PROGRESS.md](PROGRESS.md)。要点：
 
-- 真实 arXiv ID 一键下载 PDF/HTML、真实 PDF 20 篇识别率和复杂公式/图表保真度尚未验证。
-- 字符级划词、PDF 区域截图、引用悬停卡、真正的左右分屏/光标插入和锚点回跳闪烁尚未完成。
-- 全文/语义检索的 UI、真实向量模型、论文问答/速览、可编辑术语表与提示词页尚未完成。
-- 点子扩展/新颖性联网报告、项目资源约束、预实验逐节再生成、故事线和树状大纲仍是基础实现；预实验使用离线模板，不应被当成真实文献推理。
-- 写作器完成了段落对齐、增量 Mock 翻译、英文锁定和 `.tex` + 仅含实际引用的 `.bib` 导出；尚未实现段落差异选择、术语一致性检测与图表占位。
-- `npm run package:mac` 已生成未签名 `.app`，`npm run package:dmg` 已生成 Apple Silicon DMG；Intel 架构交叉打包及 E2E Playwright 冒烟未验证。
+- 尚未用真实的 Anthropic/OpenAI Key 验证过（只对着本地桩服务验证了请求、流式、错误映射）。
+- 没有语义/向量检索；全文检索是 FTS（命令面板 `⌘K`）。新颖性检查、预实验的资源约束与逐节再生成、故事线/大纲、术语一致性检测、差异逐处接受、图表占位未做。
+- 无 HTML 版本的论文只能由 PDF 文字层生成阅读视图，段落与公式质量有限；PDF 视图不支持高亮。
+- Semantic Scholar / DBLP 在高频或受限网络下会被限流或拦截，搜索页会如实列出哪个来源不可用。
+- 仅 Apple Silicon 未签名包。

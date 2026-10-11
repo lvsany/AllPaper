@@ -7,3 +7,4 @@ export function receiveTranslation(block:DraftBlock,english:string):DraftBlock{r
 export function editEnglish(block:DraftBlock,english:string):DraftBlock{return {...block,enText:english,locked:true,status:'locked'};}
 export function unlock(block:DraftBlock):DraftBlock{return {...block,locked:false,status:block.zhText? 'pending':'synced'};}
 export function blocksNeedingTranslation(blocks:DraftBlock[]):DraftBlock[]{return blocks.filter(x=>!x.locked&&x.zhText.trim()&&x.status==='pending');}
+export function failTranslation(block:DraftBlock):DraftBlock{return block.locked?block:{...block,status:'failed'};}
