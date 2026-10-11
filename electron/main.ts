@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ensureLibraryLayout } from '../src/main/library-layout';
+import { PaperStore } from '../src/main/paper-store';
 import { defaultSettings, type LibraryStatus, type Settings } from '../src/shared/types';
 
 let mainWindow: BrowserWindow | undefined;
@@ -73,6 +74,10 @@ async function libraryStatus(): Promise<LibraryStatus> {
   db.close();
   return { configured: true, root: settings.libraryPath, paperCount, indexHealthy: true };
 }
+function papers(): PaperStore {
+  if (!settings.libraryPath) throw new Error('请先在设置中选择资料库目录');
+  return new PaperStore(settings.libraryPath, async () => rebuildIndex(settings.libraryPath!));
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -104,6 +109,25 @@ app.whenReady().then(async () => {
   ipcMain.handle('library:status', libraryStatus);
   ipcMain.handle('library:rebuild-index', async () => { if (settings.libraryPath) await rebuildIndex(settings.libraryPath); });
   ipcMain.handle('library:open-path', (_event, path) => shell.openPath(path));
+  ipcMain.handle('papers:list', () => papers().list());
+  ipcMain.handle('papers:get', (_event, id: string) => papers().get(id));
+  ipcMain.handle('papers:import-pdf', async () => {
+    if (!settings.libraryPath) throw new Error('请先选择资料库目录');
+    const result = await dialog.showOpenDialog({ title: '导入 PDF 论文', filters: [{ name: 'PDF', extensions: ['pdf'] }], properties: ['openFile'] });
+    return result.canceled || !result.filePaths[0] ? undefined : papers().importPdf(result.filePaths[0]);
+  });
+  ipcMain.handle('papers:import-dropped-pdf', (_event, path: string) => papers().importPdf(path));
+  ipcMain.handle('papers:import-bibtex', async () => {
+    if (!settings.libraryPath) throw new Error('请先选择资料库目录');
+    const result = await dialog.showOpenDialog({ title: '导入 BibTeX', filters: [{ name: 'BibTeX', extensions: ['bib'] }], properties: ['openFile'] });
+    return result.canceled || !result.filePaths[0] ? undefined : papers().importBibtex(await readFile(result.filePaths[0], 'utf8'));
+  });
+  ipcMain.handle('papers:update', (_event, id: string, patch) => papers().update(id, patch));
+  ipcMain.handle('papers:change-citekey', (_event, id: string, citekey: string) => papers().changeCitekey(id, citekey));
+  ipcMain.handle('papers:export-bibtex', async (_event, ids?: string[]) => {
+    if (!settings.libraryPath) throw new Error('请先选择资料库目录'); const result = await dialog.showSaveDialog({ title: '导出 BibTeX', defaultPath: 'allpaper.bib', filters: [{ name: 'BibTeX', extensions: ['bib'] }] });
+    if (result.canceled || !result.filePath) return undefined; await writeFile(result.filePath, await papers().exportBibtex(ids)); return result.filePath;
+  });
   ipcMain.handle('window:toggle-ai', () => mainWindow?.webContents.send('toggle-ai'));
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

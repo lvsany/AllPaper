@@ -31,9 +31,28 @@ export interface LibraryStatus {
   indexHealthy: boolean;
 }
 
+export type ReadStatus = 'unread' | 'reading' | 'read' | 'deep-read';
+export type ContentSource = 'arxiv-html' | 'ar5iv' | 'pdf' | 'none';
+export interface Author { given?: string; family: string; }
+export interface Paper {
+  id: string; citekey: string; title: string; authors: Author[]; year?: number; venue?: string;
+  doi?: string; arxivId?: string; arxivCategories: string[]; abstract?: string; abstractZh?: string;
+  url?: string; pdfPath?: string; contentSource: ContentSource; tags: string[]; collections: string[];
+  projects: string[]; readStatus: ReadStatus; starred: boolean; lastPosition?: string; addedAt: string;
+}
+export interface Paragraph { id: string; paperId: string; order: number; type: 'heading' | 'paragraph' | 'list' | 'formula' | 'figure' | 'table' | 'caption' | 'footnote' | 'references' | 'code'; html: string; text: string; sectionPath: string[]; page?: number; }
+export interface PaperBundle { paper: Paper; paragraphs: Paragraph[]; }
+export interface ImportResult { paper: Paper; warnings: string[]; }
+
 export interface DesktopApi {
   settings: { get(): Promise<Settings>; save(input: Partial<Settings> & { apiKey?: string }): Promise<Settings>; chooseLibrary(): Promise<string | undefined> };
   library: { status(): Promise<LibraryStatus>; rebuildIndex(): Promise<void>; openPath(path: string): Promise<void> };
+  papers: {
+    list(): Promise<Paper[]>; importPdf(): Promise<ImportResult | undefined>; importBibtex(): Promise<ImportResult[] | undefined>;
+    update(id: string, patch: Partial<Paper>): Promise<Paper>; changeCitekey(id: string, citekey: string): Promise<Paper>;
+    exportBibtex(ids?: string[]): Promise<string | undefined>; get(id: string): Promise<PaperBundle | undefined>;
+    importDroppedPdf(path: string): Promise<ImportResult | undefined>; pathForFile(file: File): string;
+  };
   window: { toggleAi(): Promise<void> };
 }
 
