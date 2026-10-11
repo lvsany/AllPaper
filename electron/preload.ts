@@ -9,7 +9,7 @@ const api: DesktopApi = {
   },
   library: {
     status: () => ipcRenderer.invoke('library:status'),
-    rebuildIndex: () => ipcRenderer.invoke('library:rebuild-index'),
+    rebuildIndex: () => ipcRenderer.invoke('library:rebuild-index'), backup: () => ipcRenderer.invoke('library:backup'),
     openPath: (path) => ipcRenderer.invoke('library:open-path', path), fileUrl:(path)=>ipcRenderer.invoke('library:file-url',path),fullText:(query)=>ipcRenderer.invoke('library:full-text',query)
   },
   papers: {
@@ -23,6 +23,7 @@ const api: DesktopApi = {
   search: { query: (query, online) => ipcRenderer.invoke('search:query', query, online) },
   projects:{list:()=>ipcRenderer.invoke('projects:list'),create:(name)=>ipcRenderer.invoke('projects:create',name),ideas:(id)=>ipcRenderer.invoke('projects:ideas',id),createIdea:(id,one)=>ipcRenderer.invoke('projects:create-idea',id,one),saveIdea:(id,idea)=>ipcRenderer.invoke('projects:save-idea',id,idea),createPilot:(id,idea)=>ipcRenderer.invoke('projects:create-pilot',id,idea),draft:(id)=>ipcRenderer.invoke('projects:draft',id),saveDraft:(id,draft)=>ipcRenderer.invoke('projects:save-draft',id,draft),exportLatex:(id)=>ipcRenderer.invoke('projects:export-latex',id)},
   ai:{translateWriting:(text)=>ipcRenderer.invoke('ai:translate-writing',text)},
+  usage: { get: () => ipcRenderer.invoke('usage:get') },
   window: { toggleAi: () => ipcRenderer.invoke('window:toggle-ai') }
 };
 contextBridge.exposeInMainWorld('allPaper', api);

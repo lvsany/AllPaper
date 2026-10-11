@@ -1,9 +1,11 @@
-import { useState } from 'react';
-import { Check, Database, Eye, KeyRound, RefreshCw, ShieldCheck } from 'lucide-react';
-import type { LibraryStatus, Settings } from '../shared/types';
+import { useEffect, useState } from 'react';
+import { Archive, Check, Database, Eye, KeyRound, RefreshCw, ShieldCheck } from 'lucide-react';
+import type { LibraryStatus, Settings, UsageSummary } from '../shared/types';
 
 export function SettingsView({ settings, status, onSaved }: { settings: Settings; status: LibraryStatus; onSaved: () => Promise<void> }) {
   const [draft, setDraft] = useState(settings); const [apiKey, setApiKey] = useState(''); const [saved, setSaved] = useState(false);
+  const [usage, setUsage] = useState<UsageSummary>(); const [backupMessage, setBackupMessage] = useState('');
+  useEffect(() => { void window.allPaper.usage.get().then(setUsage); }, []);
   const save = async () => { await window.allPaper.settings.save({ ...draft, apiKey: apiKey || undefined }); setApiKey(''); setSaved(true); await onSaved(); setTimeout(() => setSaved(false), 1600); };
   const choose = async () => { const chosen = await window.allPaper.settings.chooseLibrary(); if (chosen) { setDraft((v) => ({ ...v, libraryPath: chosen })); await onSaved(); } };
   return <section className="settings-page"><header><div><div className="eyebrow">偏好设置</div><h1>设置</h1></div><button className="primary" onClick={() => void save()}>{saved ? <><Check size={16}/> 已保存</> : '保存设置'}</button></header>
@@ -15,6 +17,7 @@ export function SettingsView({ settings, status, onSaved }: { settings: Settings
         <div className="model-grid"><label>阅读翻译<input value={draft.aiModelTranslation} onChange={(e) => setDraft({ ...draft, aiModelTranslation: e.target.value })}/></label><label>论文写作<input value={draft.aiModelWriting} onChange={(e) => setDraft({ ...draft, aiModelWriting: e.target.value })}/></label><label>推理任务<input value={draft.aiModelReasoning} onChange={(e) => setDraft({ ...draft, aiModelReasoning: e.target.value })}/></label></div></section>
       <section className="settings-card"><h2><Eye size={18}/> 阅读与写作</h2><label>译文样式<select value={draft.translationStyle} onChange={(e) => setDraft({ ...draft, translationStyle: e.target.value as Settings['translationStyle'] })}><option value="muted">弱化颜色</option><option value="border">左侧竖线</option><option value="background">浅色底</option></select></label><label>自动翻译延迟（毫秒）<input type="number" min="0" step="100" value={draft.translationDelayMs} onChange={(e) => setDraft({ ...draft, translationDelayMs: Number(e.target.value) })}/></label><label>每月 AI 预算（美元）<input type="number" min="0" step="1" value={draft.monthlyBudget} onChange={(e) => setDraft({ ...draft, monthlyBudget: Number(e.target.value) })}/></label></section>
       <section className="settings-card"><h2><ShieldCheck size={18}/> 隐私与离线</h2><p>AllPaper 不含遥测或云同步。未配置 API Key 时，本地阅读、批注、笔记、检索与中文草稿编辑仍可使用；AI 入口会明确说明未配置状态。</p><p>术语表、提示词和用量统计将随着对应功能模块保存于本地资料库。</p></section>
+      <section className="settings-card"><h2><Archive size={18}/> 备份、用量与快捷键</h2><p>备份会把整个资料库压缩为 ZIP；索引也会一并保留，原资料库不会被修改。</p>{status.configured && <div className="row"><button className="secondary" onClick={async()=>{const path=await window.allPaper.library.backup();setBackupMessage(path?`已写入：${path}`:'已取消备份');}}><Archive size={15}/> 创建 ZIP 备份</button></div>}{backupMessage&&<p className="backup-message">{backupMessage}</p>}<div className="usage-list">{usage&&Object.keys(usage.byTask).length?Object.entries(usage.byTask).map(([task,item])=><div key={task}><span>{task}</span><span>{item.calls} 次 · {item.inputTokens + item.outputTokens} token · ${item.estimatedCost.toFixed(2)}</span></div>):<p>本月尚无模型调用。Mock 调用也会记录 token 估算，但费用为 $0。</p>}</div><p><kbd>⌘ K</kbd> 命令面板 · <kbd>⌘ ⇧ I</kbd> 全局快速记点子</p></section>
     </div>
   </section>;
 }

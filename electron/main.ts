@@ -4,17 +4,34 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { ensureLibraryLayout } from '../src/main/library-layout';
 import { PaperStore } from '../src/main/paper-store';
 import { searchAll } from '../src/main/adapters';
 import { ProjectStore } from '../src/main/project-store';
-import { draftToLatex } from '../src/core/latex';
+import { citedPapers, draftToLatex } from '../src/core/latex';
 import { MockAiProvider } from '../src/main/ai';
 import { defaultSettings, type LibraryStatus, type Settings } from '../src/shared/types';
 
 let mainWindow: BrowserWindow | undefined;
+const execFileAsync = promisify(execFile);
 const configPath = () => join(app.getPath('userData'), 'settings.json');
+const usagePath = () => join(app.getPath('userData'), 'usage.json');
 let settings: Settings = { ...defaultSettings };
+
+type UsageFile = { month: string; byTask: Record<string, { calls: number; inputTokens: number; outputTokens: number; estimatedCost: number }> };
+const currentMonth = () => new Date().toISOString().slice(0, 7);
+async function usage(): Promise<UsageFile> {
+  try { const parsed = JSON.parse(await readFile(usagePath(), 'utf8')) as UsageFile; return parsed.month === currentMonth() ? parsed : { month: currentMonth(), byTask: {} }; }
+  catch { return { month: currentMonth(), byTask: {} }; }
+}
+async function recordUsage(task: string, input: string, output: string): Promise<void> {
+  const data = await usage(); const current = data.byTask[task] ?? { calls: 0, inputTokens: 0, outputTokens: 0, estimatedCost: 0 };
+  current.calls += 1; current.inputTokens += Math.ceil(input.length / 4); current.outputTokens += Math.ceil(output.length / 4);
+  // Mock has no external bill. Real providers can later attach their returned usage here.
+  data.byTask[task] = current; await mkdir(app.getPath('userData'), { recursive: true }); await writeFile(usagePath(), JSON.stringify(data, null, 2));
+}
 
 async function loadSettings(): Promise<Settings> {
   try {
@@ -82,7 +99,7 @@ async function libraryStatus(): Promise<LibraryStatus> {
 async function fullTextSearch(query:string){if(!settings.libraryPath)return [];await ensureLibrary(settings.libraryPath);const db=new Database(indexPath(settings.libraryPath),{readonly:true});const tokens=query.trim().split(/\s+/).filter(Boolean);let rows:any[]=[];try{rows=db.prepare(`SELECT id,title,highlight(paper_fts,4,'<b>','</b>') as excerpt FROM paper_fts WHERE paper_fts MATCH ? LIMIT 30`).all(tokens.join(' OR ')) as any[]}catch{rows=db.prepare(`SELECT id,title,substr(body,1,280) as excerpt FROM paper_index WHERE title LIKE ? OR abstract LIKE ? OR body LIKE ? LIMIT 30`).all(`%${query}%`,`%${query}%`,`%${query}%`) as any[]}db.close();return rows;}
 function papers(): PaperStore {
   if (!settings.libraryPath) throw new Error('请先在设置中选择资料库目录');
-  return new PaperStore(settings.libraryPath, async () => rebuildIndex(settings.libraryPath!));
+  return new PaperStore(settings.libraryPath, async () => rebuildIndex(settings.libraryPath!), (task, input, output) => { void recordUsage(task, input, output); });
 }
 function projects():ProjectStore{if(!settings.libraryPath)throw new Error('请先选择资料库目录');return new ProjectStore(settings.libraryPath)}
 
@@ -115,6 +132,14 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle('library:status', libraryStatus);
   ipcMain.handle('library:rebuild-index', async () => { if (settings.libraryPath) await rebuildIndex(settings.libraryPath); });
+  ipcMain.handle('library:backup', async () => {
+    if (!settings.libraryPath) throw new Error('请先选择资料库目录');
+    const date = new Date().toISOString().slice(0, 10);
+    const result = await dialog.showSaveDialog({ title: '备份资料库', defaultPath: `AllPaperLibrary-${date}.zip`, filters: [{ name: 'ZIP 压缩包', extensions: ['zip'] }] });
+    if (result.canceled || !result.filePath) return undefined;
+    await execFileAsync('/usr/bin/ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', settings.libraryPath, result.filePath]);
+    return result.filePath;
+  });
   ipcMain.handle('library:open-path', (_event, path) => shell.openPath(path));
   ipcMain.handle('library:full-text',(_e,query:string)=>fullTextSearch(query));
   ipcMain.handle('library:file-url', (_event,path:string)=>pathToFileURL(path).toString());
@@ -146,8 +171,9 @@ app.whenReady().then(async () => {
     if (result.canceled || !result.filePath) return undefined; await writeFile(result.filePath, await papers().exportBibtex(ids)); return result.filePath;
   });
   ipcMain.handle('search:query', (_event, query: string, online?: boolean) => searchAll(query, Boolean(online)));
-  ipcMain.handle('projects:list',()=>projects().list());ipcMain.handle('projects:create',(_e,name:string)=>projects().create(name));ipcMain.handle('projects:ideas',(_e,id:string)=>projects().ideas(id));ipcMain.handle('projects:create-idea',(_e,id:string,one:string)=>projects().createIdea(id,one));ipcMain.handle('projects:save-idea',(_e,id:string,idea)=>projects().saveIdea(id,idea));ipcMain.handle('projects:create-pilot',(_e,id:string,idea)=>projects().createPilot(id,idea));ipcMain.handle('projects:draft',(_e,id:string)=>projects().draft(id));ipcMain.handle('projects:save-draft',(_e,id:string,draft)=>projects().saveDraft(id,draft));ipcMain.handle('projects:export-latex',async(_e,id:string)=>{const d=await projects().draft(id);const result=await dialog.showSaveDialog({title:'导出 LaTeX',defaultPath:'paper.tex',filters:[{name:'LaTeX',extensions:['tex']}]});if(result.canceled||!result.filePath)return undefined;await writeFile(result.filePath,draftToLatex(d.blocks));return result.filePath;});
-  ipcMain.handle('ai:translate-writing',(_e,text:string)=>new MockAiProvider().translate({id:'writing',paperId:'',order:0,type:'paragraph',html:'',text,sectionPath:[]},{}));
+  ipcMain.handle('projects:list',()=>projects().list());ipcMain.handle('projects:create',(_e,name:string)=>projects().create(name));ipcMain.handle('projects:ideas',(_e,id:string)=>projects().ideas(id));ipcMain.handle('projects:create-idea',(_e,id:string,one:string)=>projects().createIdea(id,one));ipcMain.handle('projects:save-idea',(_e,id:string,idea)=>projects().saveIdea(id,idea));ipcMain.handle('projects:create-pilot',(_e,id:string,idea)=>projects().createPilot(id,idea));ipcMain.handle('projects:draft',(_e,id:string)=>projects().draft(id));ipcMain.handle('projects:save-draft',(_e,id:string,draft)=>projects().saveDraft(id,draft));ipcMain.handle('projects:export-latex',async(_e,id:string)=>{const d=await projects().draft(id);const result=await dialog.showSaveDialog({title:'导出 LaTeX 与引用',defaultPath:'paper.tex',filters:[{name:'LaTeX',extensions:['tex']}]});if(result.canceled||!result.filePath)return undefined;await writeFile(result.filePath,draftToLatex(d.blocks));const cited=citedPapers(d.blocks,await papers().list());const bibPath=result.filePath.replace(/\.tex$/i,'')+'.bib';await writeFile(bibPath,await papers().exportBibtex(cited.map(p=>p.id)));return result.filePath;});
+  ipcMain.handle('ai:translate-writing',async(_e,text:string)=>{const translated=await new MockAiProvider().translate({id:'writing',paperId:'',order:0,type:'paragraph',html:'',text,sectionPath:[]},{});await recordUsage('双栏写作翻译',text,translated);return translated;});
+  ipcMain.handle('usage:get', usage);
   ipcMain.handle('window:toggle-ai', () => mainWindow?.webContents.send('toggle-ai'));
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
