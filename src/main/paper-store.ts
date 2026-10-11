@@ -3,6 +3,7 @@ import { basename, extname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { citekeyBase, nextCitekey, paperToBibtex, parseBibtex, slugify } from '../core/bibliography';
 import type { ImportResult, Paper, PaperBundle, Paragraph } from '../shared/types';
+import type { SearchPaper } from '../core/deduplicate';
 
 const metaFile = 'meta.json';
 export class PaperStore {
@@ -35,6 +36,17 @@ export class PaperStore {
       const dir = this.paperDir(paper); await mkdir(dir, { recursive: true }); await writeFile(join(dir, metaFile), JSON.stringify(paper, null, 2)); await writeFile(join(dir, 'content.json'), JSON.stringify({ source: 'none', paragraphs: [] }, null, 2)); results.push({ paper, warnings: [] });
     }
     if (results.length) await this.afterChange(); return results;
+  }
+  async importSearchRecord(record: SearchPaper): Promise<ImportResult> {
+    const existing = await this.list();
+    const duplicate = existing.find((paper) => (record.doi && paper.doi === record.doi) || (record.arxivId && paper.arxivId === record.arxivId) || paper.title.toLowerCase() === record.title.toLowerCase());
+    if (duplicate) return { paper: duplicate, warnings: ['该论文已在文献库中。'] };
+    const paper: Paper = { id: randomUUID(), citekey: '', title: record.title, authors: record.authors.length ? record.authors : [{ family: 'Unknown' }], year: record.year, venue: record.venue, doi: record.doi, arxivId: record.arxivId, arxivCategories: record.categories ?? [], abstract: record.abstract, url: record.url, contentSource: record.recordedParagraphs?.length ? 'arxiv-html' : 'none', tags: [], collections: [], projects: [], readStatus: 'unread', starred: false, addedAt: new Date().toISOString() };
+    paper.citekey = nextCitekey(citekeyBase(paper.authors, paper.year, paper.title), existing.map((item) => item.citekey));
+    const dir = this.paperDir(paper); await mkdir(dir, { recursive: true });
+    const paragraphs: Paragraph[] = (record.recordedParagraphs ?? []).map((item, order) => ({ id: `${paper.id.slice(0, 8)}-p${order}`, paperId: paper.id, order, type: (item.type as Paragraph['type']) || 'paragraph', html: escapeHtml(item.text), text: item.text, sectionPath: item.sectionPath ?? [] }));
+    await writeFile(join(dir, metaFile), JSON.stringify(paper, null, 2)); await writeFile(join(dir, 'content.json'), JSON.stringify({ source: paper.contentSource, paragraphs }, null, 2)); await writeFile(join(dir, 'annotations.json'), '[]'); await writeFile(join(dir, 'translation.zh.json'), '{}');
+    await this.afterChange(); return { paper, warnings: record.recordedParagraphs?.length ? [] : ['已入库元数据；此来源尚未提供可获取全文。'] };
   }
   async update(id: string, patch: Partial<Paper>): Promise<Paper> {
     const paper = (await this.list()).find((item) => item.id === id); if (!paper) throw new Error('找不到文献');

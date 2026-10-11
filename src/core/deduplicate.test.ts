@@ -1,0 +1,2 @@
+import { expect,it } from 'vitest'; import { mergeSearchResults } from './deduplicate';
+it('merges arXiv and DOI variants',()=>{const r=mergeSearchResults([{source:'arxiv',sourceId:'1',title:'Agent Systems',authors:[],arxivId:'2401.1',citationCount:2},{source:'openalex',sourceId:'x',title:'Agent Systems',authors:[],doi:'10/a',arxivId:'2401.1',citationCount:8}]);expect(r).toHaveLength(1);expect(r[0].citationCount).toBe(8);});

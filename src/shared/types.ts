@@ -51,8 +51,9 @@ export interface DesktopApi {
     list(): Promise<Paper[]>; importPdf(): Promise<ImportResult | undefined>; importBibtex(): Promise<ImportResult[] | undefined>;
     update(id: string, patch: Partial<Paper>): Promise<Paper>; changeCitekey(id: string, citekey: string): Promise<Paper>;
     exportBibtex(ids?: string[]): Promise<string | undefined>; get(id: string): Promise<PaperBundle | undefined>;
-    importDroppedPdf(path: string): Promise<ImportResult | undefined>; pathForFile(file: File): string;
+    importDroppedPdf(path: string): Promise<ImportResult | undefined>; importSearchRecord(record: import('../core/deduplicate').SearchPaper): Promise<ImportResult>; pathForFile(file: File): string;
   };
+  search: { query(query: string, online?: boolean): Promise<import('../core/deduplicate').SearchPaper[]> };
   window: { toggleAi(): Promise<void> };
 }
 

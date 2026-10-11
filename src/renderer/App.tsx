@@ -4,6 +4,7 @@ import type { LibraryStatus, Settings } from '../shared/types';
 import { defaultSettings } from '../shared/types';
 import { SettingsView } from './SettingsView';
 import { LibraryView } from './LibraryView';
+import { SearchView } from './SearchView';
 
 type Screen = 'library' | 'projects' | 'search' | 'settings';
 
@@ -24,7 +25,7 @@ export function App() {
       <div className="sidebar-foot"><button className="shortcut" onClick={() => setScreen('search')}><span>命令面板</span><kbd>⌘ K</kbd></button></div>
     </aside>
     <main className="workspace">
-      {screen === 'settings' ? <SettingsView settings={settings} status={status} onSaved={refresh}/> : screen === 'library' && status.configured ? <LibraryView/> : <Home screen={screen} status={status} onConfigure={() => setScreen('settings')}/>} 
+      {screen === 'settings' ? <SettingsView settings={settings} status={status} onSaved={refresh}/> : screen === 'search' && status.configured ? <SearchView/> : screen === 'library' && status.configured ? <LibraryView/> : <Home screen={screen} status={status} onConfigure={() => setScreen('settings')}/>} 
     </main>
     {aiOpen && <aside className="ai-panel"><div className="panel-heading"><span><Sparkles size={17}/> AI 助手</span><button aria-label="收起 AI 侧栏" onClick={() => setAiOpen(false)}>×</button></div><div className="ai-empty"><Sparkles size={28}/><p>{settings.apiKeyConfigured || settings.aiProvider === 'mock' ? '打开论文、点子或草稿后，可在这里获取有出处的帮助。' : '尚未配置模型服务'}</p>{!settings.apiKeyConfigured && settings.aiProvider !== 'mock' && <button className="text-button" onClick={() => setScreen('settings')}>前往设置</button>}</div></aside>}
     {!aiOpen && <button className="ai-reopen" title="打开 AI 侧栏" onClick={() => setAiOpen(true)}><PanelRight size={18}/></button>}
