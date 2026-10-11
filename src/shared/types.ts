@@ -48,7 +48,7 @@ export interface ImportResult { paper: Paper; warnings: string[]; }
 
 export interface DesktopApi {
   settings: { get(): Promise<Settings>; save(input: Partial<Settings> & { apiKey?: string }): Promise<Settings>; chooseLibrary(): Promise<string | undefined> };
-  library: { status(): Promise<LibraryStatus>; rebuildIndex(): Promise<void>; openPath(path: string): Promise<void>; fileUrl(path:string):Promise<string> };
+  library: { status(): Promise<LibraryStatus>; rebuildIndex(): Promise<void>; openPath(path: string): Promise<void>; fileUrl(path:string):Promise<string>; fullText(query:string):Promise<Array<{id:string;title:string;excerpt:string}> > };
   papers: {
     list(): Promise<Paper[]>; importPdf(): Promise<ImportResult | undefined>; importBibtex(): Promise<ImportResult[] | undefined>;
     update(id: string, patch: Partial<Paper>): Promise<Paper>; changeCitekey(id: string, citekey: string): Promise<Paper>; translations(id:string):Promise<Record<string,string>>; translate(id:string,paragraphIds?:string[]):Promise<Record<string,string>>;
@@ -57,6 +57,8 @@ export interface DesktopApi {
     importDroppedPdf(path: string): Promise<ImportResult | undefined>; importSearchRecord(record: import('../core/deduplicate').SearchPaper): Promise<ImportResult>; pathForFile(file: File): string;
   };
   search: { query(query: string, online?: boolean): Promise<import('../core/deduplicate').SearchPaper[]> };
+  projects: {list():Promise<import('./projects').Project[]>;create(name:string):Promise<import('./projects').Project>;ideas(id:string):Promise<import('./projects').Idea[]>;createIdea(id:string,oneLiner:string):Promise<import('./projects').Idea>;saveIdea(id:string,idea:import('./projects').Idea):Promise<import('./projects').Idea>;createPilot(id:string,idea:import('./projects').Idea):Promise<import('./projects').Pilot>;draft(id:string):Promise<import('./projects').DraftDocument>;saveDraft(id:string,draft:import('./projects').DraftDocument):Promise<import('./projects').DraftDocument>;exportLatex(id:string):Promise<string|undefined>};
+  ai:{translateWriting(text:string):Promise<string>};
   window: { toggleAi(): Promise<void> };
 }
 

@@ -7,6 +7,9 @@ import { pathToFileURL } from 'node:url';
 import { ensureLibraryLayout } from '../src/main/library-layout';
 import { PaperStore } from '../src/main/paper-store';
 import { searchAll } from '../src/main/adapters';
+import { ProjectStore } from '../src/main/project-store';
+import { draftToLatex } from '../src/core/latex';
+import { MockAiProvider } from '../src/main/ai';
 import { defaultSettings, type LibraryStatus, type Settings } from '../src/shared/types';
 
 let mainWindow: BrowserWindow | undefined;
@@ -76,10 +79,12 @@ async function libraryStatus(): Promise<LibraryStatus> {
   db.close();
   return { configured: true, root: settings.libraryPath, paperCount, indexHealthy: true };
 }
+async function fullTextSearch(query:string){if(!settings.libraryPath)return [];await ensureLibrary(settings.libraryPath);const db=new Database(indexPath(settings.libraryPath),{readonly:true});const tokens=query.trim().split(/\s+/).filter(Boolean);let rows:any[]=[];try{rows=db.prepare(`SELECT id,title,highlight(paper_fts,4,'<b>','</b>') as excerpt FROM paper_fts WHERE paper_fts MATCH ? LIMIT 30`).all(tokens.join(' OR ')) as any[]}catch{rows=db.prepare(`SELECT id,title,substr(body,1,280) as excerpt FROM paper_index WHERE title LIKE ? OR abstract LIKE ? OR body LIKE ? LIMIT 30`).all(`%${query}%`,`%${query}%`,`%${query}%`) as any[]}db.close();return rows;}
 function papers(): PaperStore {
   if (!settings.libraryPath) throw new Error('请先在设置中选择资料库目录');
   return new PaperStore(settings.libraryPath, async () => rebuildIndex(settings.libraryPath!));
 }
+function projects():ProjectStore{if(!settings.libraryPath)throw new Error('请先选择资料库目录');return new ProjectStore(settings.libraryPath)}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -111,6 +116,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('library:status', libraryStatus);
   ipcMain.handle('library:rebuild-index', async () => { if (settings.libraryPath) await rebuildIndex(settings.libraryPath); });
   ipcMain.handle('library:open-path', (_event, path) => shell.openPath(path));
+  ipcMain.handle('library:full-text',(_e,query:string)=>fullTextSearch(query));
   ipcMain.handle('library:file-url', (_event,path:string)=>pathToFileURL(path).toString());
   ipcMain.handle('papers:list', () => papers().list());
   ipcMain.handle('papers:get', (_event, id: string) => papers().get(id));
@@ -140,6 +146,8 @@ app.whenReady().then(async () => {
     if (result.canceled || !result.filePath) return undefined; await writeFile(result.filePath, await papers().exportBibtex(ids)); return result.filePath;
   });
   ipcMain.handle('search:query', (_event, query: string, online?: boolean) => searchAll(query, Boolean(online)));
+  ipcMain.handle('projects:list',()=>projects().list());ipcMain.handle('projects:create',(_e,name:string)=>projects().create(name));ipcMain.handle('projects:ideas',(_e,id:string)=>projects().ideas(id));ipcMain.handle('projects:create-idea',(_e,id:string,one:string)=>projects().createIdea(id,one));ipcMain.handle('projects:save-idea',(_e,id:string,idea)=>projects().saveIdea(id,idea));ipcMain.handle('projects:create-pilot',(_e,id:string,idea)=>projects().createPilot(id,idea));ipcMain.handle('projects:draft',(_e,id:string)=>projects().draft(id));ipcMain.handle('projects:save-draft',(_e,id:string,draft)=>projects().saveDraft(id,draft));ipcMain.handle('projects:export-latex',async(_e,id:string)=>{const d=await projects().draft(id);const result=await dialog.showSaveDialog({title:'导出 LaTeX',defaultPath:'paper.tex',filters:[{name:'LaTeX',extensions:['tex']}]});if(result.canceled||!result.filePath)return undefined;await writeFile(result.filePath,draftToLatex(d.blocks));return result.filePath;});
+  ipcMain.handle('ai:translate-writing',(_e,text:string)=>new MockAiProvider().translate({id:'writing',paperId:'',order:0,type:'paragraph',html:'',text,sectionPath:[]},{}));
   ipcMain.handle('window:toggle-ai', () => mainWindow?.webContents.send('toggle-ai'));
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

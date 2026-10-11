@@ -1,0 +1,4 @@
+import type { DraftBlock } from './draft';import type { Paper } from '../shared/types';
+const cite=(x:string)=>x.replace(/\[@([^\]#,]+)(?:#[^\]]+)?(?:,\s*p\.\s*([^\]]+))?\]/g,(_,key,page)=>page?`\\cite[p.~${page}]{${key}}`:`\\cite{${key}}`);
+export function draftToLatex(blocks:DraftBlock[]):string{return blocks.map(b=>{const t=cite(b.enText);if(b.type==='heading')return `\\section{${t.replace(/^#+\s*/,'')}}`;if(b.type==='formula')return `\\[\n${t}\n\\]`;if(b.type==='list')return `\\begin{itemize}\n\\item ${t}\n\\end{itemize}`;if(b.type==='figure')return `\\begin{figure}[t]\n\\centering\n\\caption{${t}}\n\\end{figure}`;return `${t}\n`;}).join('\n');}
+export function citedPapers(blocks:DraftBlock[],papers:Paper[]):Paper[]{const keys=new Set([...draftToLatex(blocks).matchAll(/\\cite(?:\[[^\]]+\])?\{([^}]+)\}/g)].map(x=>x[1]));return papers.filter(p=>keys.has(p.citekey));}
