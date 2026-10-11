@@ -46,10 +46,10 @@ export interface ImportResult { paper: Paper; warnings: string[]; }
 
 export interface DesktopApi {
   settings: { get(): Promise<Settings>; save(input: Partial<Settings> & { apiKey?: string }): Promise<Settings>; chooseLibrary(): Promise<string | undefined> };
-  library: { status(): Promise<LibraryStatus>; rebuildIndex(): Promise<void>; openPath(path: string): Promise<void> };
+  library: { status(): Promise<LibraryStatus>; rebuildIndex(): Promise<void>; openPath(path: string): Promise<void>; fileUrl(path:string):Promise<string> };
   papers: {
     list(): Promise<Paper[]>; importPdf(): Promise<ImportResult | undefined>; importBibtex(): Promise<ImportResult[] | undefined>;
-    update(id: string, patch: Partial<Paper>): Promise<Paper>; changeCitekey(id: string, citekey: string): Promise<Paper>;
+    update(id: string, patch: Partial<Paper>): Promise<Paper>; changeCitekey(id: string, citekey: string): Promise<Paper>; translations(id:string):Promise<Record<string,string>>; translate(id:string,paragraphIds?:string[]):Promise<Record<string,string>>;
     exportBibtex(ids?: string[]): Promise<string | undefined>; get(id: string): Promise<PaperBundle | undefined>;
     importDroppedPdf(path: string): Promise<ImportResult | undefined>; importSearchRecord(record: import('../core/deduplicate').SearchPaper): Promise<ImportResult>; pathForFile(file: File): string;
   };

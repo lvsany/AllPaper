@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { ensureLibraryLayout } from '../src/main/library-layout';
 import { PaperStore } from '../src/main/paper-store';
 import { searchAll } from '../src/main/adapters';
@@ -110,8 +111,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('library:status', libraryStatus);
   ipcMain.handle('library:rebuild-index', async () => { if (settings.libraryPath) await rebuildIndex(settings.libraryPath); });
   ipcMain.handle('library:open-path', (_event, path) => shell.openPath(path));
+  ipcMain.handle('library:file-url', (_event,path:string)=>pathToFileURL(path).toString());
   ipcMain.handle('papers:list', () => papers().list());
   ipcMain.handle('papers:get', (_event, id: string) => papers().get(id));
+  ipcMain.handle('papers:translations', (_event,id:string)=>papers().translations(id));
+  ipcMain.handle('papers:translate', (_event,id:string,paragraphIds?:string[])=>papers().translate(id,paragraphIds));
   ipcMain.handle('papers:import-pdf', async () => {
     if (!settings.libraryPath) throw new Error('请先选择资料库目录');
     const result = await dialog.showOpenDialog({ title: '导入 PDF 论文', filters: [{ name: 'PDF', extensions: ['pdf'] }], properties: ['openFile'] });

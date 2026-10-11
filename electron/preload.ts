@@ -10,10 +10,10 @@ const api: DesktopApi = {
   library: {
     status: () => ipcRenderer.invoke('library:status'),
     rebuildIndex: () => ipcRenderer.invoke('library:rebuild-index'),
-    openPath: (path) => ipcRenderer.invoke('library:open-path', path)
+    openPath: (path) => ipcRenderer.invoke('library:open-path', path), fileUrl:(path)=>ipcRenderer.invoke('library:file-url',path)
   },
   papers: {
-    list: () => ipcRenderer.invoke('papers:list'), get: (id) => ipcRenderer.invoke('papers:get', id),
+    list: () => ipcRenderer.invoke('papers:list'), get: (id) => ipcRenderer.invoke('papers:get', id), translations:(id)=>ipcRenderer.invoke('papers:translations',id), translate:(id,paragraphIds)=>ipcRenderer.invoke('papers:translate',id,paragraphIds),
     importPdf: () => ipcRenderer.invoke('papers:import-pdf'), importBibtex: () => ipcRenderer.invoke('papers:import-bibtex'),
     update: (id, patch) => ipcRenderer.invoke('papers:update', id, patch), changeCitekey: (id, citekey) => ipcRenderer.invoke('papers:change-citekey', id, citekey),
     exportBibtex: (ids) => ipcRenderer.invoke('papers:export-bibtex', ids), importDroppedPdf: (path) => ipcRenderer.invoke('papers:import-dropped-pdf', path),

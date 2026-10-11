@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { citekeyBase, nextCitekey, paperToBibtex, parseBibtex, slugify } from '../core/bibliography';
 import type { ImportResult, Paper, PaperBundle, Paragraph } from '../shared/types';
 import type { SearchPaper } from '../core/deduplicate';
+import { MockAiProvider } from './ai';
 
 const metaFile = 'meta.json';
 export class PaperStore {
@@ -18,6 +19,8 @@ export class PaperStore {
     const paper = (await this.list()).find((item) => item.id === id); if (!paper) return undefined;
     const dir = this.paperDir(paper); try { const content = JSON.parse(await readFile(join(dir, 'content.json'), 'utf8')) as { paragraphs: Paragraph[] }; return { paper, paragraphs: content.paragraphs }; } catch { return { paper, paragraphs: [] }; }
   }
+  async translations(id:string):Promise<Record<string,string>>{const paper=(await this.list()).find(x=>x.id===id);if(!paper)return {};try{return JSON.parse(await readFile(join(this.paperDir(paper),'translation.zh.json'),'utf8')) as Record<string,string>;}catch{return {};}}
+  async translate(id:string, paragraphIds?:string[]):Promise<Record<string,string>>{const bundle=await this.get(id);if(!bundle)throw new Error('找不到文献');const cached=await this.translations(id);const provider=new MockAiProvider();for(const p of bundle.paragraphs){if(paragraphIds&&!paragraphIds.includes(p.id))continue;if(cached[p.id]||['formula','code','references','figure','table'].includes(p.type))continue;cached[p.id]=await provider.translate(p,{});}await writeFile(join(this.paperDir(bundle.paper),'translation.zh.json'),JSON.stringify(cached,null,2));return cached;}
   private paperDir(paper: Paper) { return join(this.papersRoot, `${paper.citekey}-${paper.id.slice(0, 8)}`); }
   async importPdf(path: string): Promise<ImportResult> {
     const extracted = await extractPdf(path); const existing = await this.list();
