@@ -2,9 +2,10 @@ import { cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { citekeyBase, nextCitekey, paperToBibtex, parseBibtex, slugify } from '../core/bibliography';
-import type { ImportResult, Paper, PaperBundle, Paragraph } from '../shared/types';
+import type { Annotation, ImportResult, Paper, PaperBundle, Paragraph } from '../shared/types';
 import type { SearchPaper } from '../core/deduplicate';
 import { MockAiProvider } from './ai';
+import { createAnchor } from '../core/anchors';
 
 const metaFile = 'meta.json';
 export class PaperStore {
@@ -21,6 +22,11 @@ export class PaperStore {
   }
   async translations(id:string):Promise<Record<string,string>>{const paper=(await this.list()).find(x=>x.id===id);if(!paper)return {};try{return JSON.parse(await readFile(join(this.paperDir(paper),'translation.zh.json'),'utf8')) as Record<string,string>;}catch{return {};}}
   async translate(id:string, paragraphIds?:string[]):Promise<Record<string,string>>{const bundle=await this.get(id);if(!bundle)throw new Error('找不到文献');const cached=await this.translations(id);const provider=new MockAiProvider();for(const p of bundle.paragraphs){if(paragraphIds&&!paragraphIds.includes(p.id))continue;if(cached[p.id]||['formula','code','references','figure','table'].includes(p.type))continue;cached[p.id]=await provider.translate(p,{});}await writeFile(join(this.paperDir(bundle.paper),'translation.zh.json'),JSON.stringify(cached,null,2));return cached;}
+  async annotations(id:string):Promise<Annotation[]>{const paper=(await this.list()).find(x=>x.id===id);if(!paper)return [];try{return JSON.parse(await readFile(join(this.paperDir(paper),'annotations.json'),'utf8')) as Annotation[];}catch{return [];}}
+  async annotate(id:string,paragraphId:string,color:string,comment?:string){const bundle=await this.get(id);if(!bundle)throw new Error('找不到文献');const paragraph=bundle.paragraphs.find(p=>p.id===paragraphId);if(!paragraph)throw new Error('找不到段落');const anchor=createAnchor(paragraph.text,0,paragraph.text.length,paragraph.id);const annotation={id:randomUUID().slice(0,8),paperId:id,view:'reader' as const,color,quotedText:anchor.quotedText,prefix:anchor.prefix,suffix:anchor.suffix,paragraphId,offsets:[0,paragraph.text.length] as [number,number],comment,createdAt:new Date().toISOString()};const list=await this.annotations(id);list.push(annotation);await writeFile(join(this.paperDir(bundle.paper),'annotations.json'),JSON.stringify(list,null,2));return annotation;}
+  async note(id:string){const paper=(await this.list()).find(x=>x.id===id);if(!paper)throw new Error('找不到文献');const path=join(this.paperDir(paper),'note.md');try{return {paperId:id,markdown:await readFile(path,'utf8')};}catch{return {paperId:id,markdown:`# ${paper.title}\n\n## 一句话总结\n\n## 问题\n\n## 方法\n\n## 结论\n\n## 我的看法\n\n## 可借鉴点\n`};}}
+  async saveNote(id:string,markdown:string){const paper=(await this.list()).find(x=>x.id===id);if(!paper)throw new Error('找不到文献');await writeFile(join(this.paperDir(paper),'note.md'),markdown);return {paperId:id,markdown};}
+  async appendAnnotationToNote(id:string,annotationId:string){const annotations=await this.annotations(id);const annotation=annotations.find(a=>a.id===annotationId);if(!annotation)throw new Error('找不到批注');const paper=(await this.list()).find(x=>x.id===id)!;const note=await this.note(id);const translations=await this.translations(id);const addition=`\n> ${annotation.quotedText}\n>\n> ${translations[annotation.paragraphId??'']??'（译文尚未生成）'}\n>\n> [@${paper.citekey}#${annotation.id}]\n`;return this.saveNote(id,`${note.markdown}${addition}`);}
   private paperDir(paper: Paper) { return join(this.papersRoot, `${paper.citekey}-${paper.id.slice(0, 8)}`); }
   async importPdf(path: string): Promise<ImportResult> {
     const extracted = await extractPdf(path); const existing = await this.list();

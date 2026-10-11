@@ -42,6 +42,8 @@ export interface Paper {
 }
 export interface Paragraph { id: string; paperId: string; order: number; type: 'heading' | 'paragraph' | 'list' | 'formula' | 'figure' | 'table' | 'caption' | 'footnote' | 'references' | 'code'; html: string; text: string; sectionPath: string[]; page?: number; }
 export interface PaperBundle { paper: Paper; paragraphs: Paragraph[]; }
+export interface Annotation { id:string; paperId:string; view:'reader'|'pdf'; color:string; quotedText:string; prefix:string; suffix:string; paragraphId?:string; offsets?:[number,number]; page?:number; comment?:string; createdAt:string; }
+export interface NoteDocument { paperId:string; markdown:string; }
 export interface ImportResult { paper: Paper; warnings: string[]; }
 
 export interface DesktopApi {
@@ -50,6 +52,7 @@ export interface DesktopApi {
   papers: {
     list(): Promise<Paper[]>; importPdf(): Promise<ImportResult | undefined>; importBibtex(): Promise<ImportResult[] | undefined>;
     update(id: string, patch: Partial<Paper>): Promise<Paper>; changeCitekey(id: string, citekey: string): Promise<Paper>; translations(id:string):Promise<Record<string,string>>; translate(id:string,paragraphIds?:string[]):Promise<Record<string,string>>;
+    annotations(id:string):Promise<Annotation[]>; annotate(id:string,paragraphId:string,color:string,comment?:string):Promise<Annotation>; note(id:string):Promise<NoteDocument>; appendAnnotationToNote(id:string,annotationId:string):Promise<NoteDocument>; saveNote(id:string,markdown:string):Promise<NoteDocument>;
     exportBibtex(ids?: string[]): Promise<string | undefined>; get(id: string): Promise<PaperBundle | undefined>;
     importDroppedPdf(path: string): Promise<ImportResult | undefined>; importSearchRecord(record: import('../core/deduplicate').SearchPaper): Promise<ImportResult>; pathForFile(file: File): string;
   };

@@ -116,6 +116,11 @@ app.whenReady().then(async () => {
   ipcMain.handle('papers:get', (_event, id: string) => papers().get(id));
   ipcMain.handle('papers:translations', (_event,id:string)=>papers().translations(id));
   ipcMain.handle('papers:translate', (_event,id:string,paragraphIds?:string[])=>papers().translate(id,paragraphIds));
+  ipcMain.handle('papers:annotations',(_event,id:string)=>papers().annotations(id));
+  ipcMain.handle('papers:annotate',(_event,id:string,paragraphId:string,color:string,comment?:string)=>papers().annotate(id,paragraphId,color,comment));
+  ipcMain.handle('papers:note',(_event,id:string)=>papers().note(id));
+  ipcMain.handle('papers:save-note',(_event,id:string,markdown:string)=>papers().saveNote(id,markdown));
+  ipcMain.handle('papers:append-annotation-note',(_event,id:string,annotationId:string)=>papers().appendAnnotationToNote(id,annotationId));
   ipcMain.handle('papers:import-pdf', async () => {
     if (!settings.libraryPath) throw new Error('请先选择资料库目录');
     const result = await dialog.showOpenDialog({ title: '导入 PDF 论文', filters: [{ name: 'PDF', extensions: ['pdf'] }], properties: ['openFile'] });

@@ -1,0 +1,3 @@
+import {expect,it} from 'vitest';import {createAnchor,rematchAnchor} from './anchors';
+it('re-matches a quote after preceding text changes',()=>{const original='Introduction. The agent collaboration improves quality. Conclusion.';const a=createAnchor(original,14,53,'p1');const result=rematchAnchor(a,'Revised introduction. The agent collaboration improves quality. Conclusion.');expect(result).toMatchObject({confidence:'context'});});
+it('reports missing quote instead of jumping to a wrong location',()=>{const a=createAnchor('A useful original sentence.',2,8);expect(rematchAnchor(a,'A completely changed paragraph.')).toBeUndefined();});
