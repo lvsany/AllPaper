@@ -307,12 +307,18 @@ app.whenReady().then(async () => {
     return result.canceled || !result.filePaths[0] ? undefined : papers().importPdf(result.filePaths[0]);
   });
   ipcMain.handle('papers:import-dropped-pdf', (_e, path: string) => papers().importPdf(path));
-  ipcMain.handle('papers:import-arxiv', (_e, input: string) => papers().importArxiv(input, (message) => send('papers:import-progress', message)));
+  ipcMain.handle('papers:import-arxiv', (_e, input: string) => papers().importArxiv(input, (message) => send('papers:import-progress', { message })));
+  ipcMain.handle('papers:fetch-full-text', (_e, id: string) => papers().fetchFullText(id, (message) => send('papers:import-progress', { message })));
+  ipcMain.handle('papers:fetch-missing', () => papers().fetchMissingFullTexts((progress) => send('papers:import-progress', progress)));
+  ipcMain.handle('papers:attach-pdf', async (_e, id: string) => {
+    const result = await dialog.showOpenDialog({ title: '选择这篇论文的 PDF', filters: [{ name: 'PDF', extensions: ['pdf'] }], properties: ['openFile'] });
+    return result.canceled || !result.filePaths[0] ? undefined : papers().attachPdf(id, result.filePaths[0]);
+  });
   ipcMain.handle('papers:import-search-record', (_e, record) => papers().importSearchRecord(record));
   ipcMain.handle('papers:import-bibtex', async () => {
     needLibrary();
     const result = await dialog.showOpenDialog({ title: '导入 BibTeX', filters: [{ name: 'BibTeX', extensions: ['bib'] }], properties: ['openFile'] });
-    return result.canceled || !result.filePaths[0] ? undefined : papers().importBibtex(await readFile(result.filePaths[0], 'utf8'));
+    return result.canceled || !result.filePaths[0] ? undefined : papers().importBibtex(await readFile(result.filePaths[0], 'utf8'), (progress) => send('papers:import-progress', progress));
   });
   ipcMain.handle('papers:update', (_e, id: string, patch) => papers().update(id, patch));
   ipcMain.handle('papers:change-citekey', (_e, id: string, citekey: string) => papers().changeCitekey(id, citekey));

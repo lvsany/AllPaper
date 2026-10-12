@@ -12,4 +12,18 @@ describe('bibliography', () => {
     const parsed = parseBibtex(paperToBibtex(paper));
     expect(parsed[0]).toMatchObject({ citekey: paper.citekey, title: paper.title, year: 2024, venue: 'ICSE' });
   });
+  it('reads real-world .bib files: one-line entries, quotes, nested braces, comments', () => {
+    const bib = `@comment{ignored}
+@string{ICSE = "ICSE"}
+@InProceedings{Wang2024,
+  author  = "Wang, Lin and Chen, Yu",
+  title   = {{SWE}-bench: Can LMs Resolve {GitHub} Issues?},
+  booktitle = ICSE,
+  year = 2024, eprint = {2310.06770}, archivePrefix = {arXiv}}
+@article{li2023, title={A \& B}, author={Li, Wei}, journal={TSE}, doi={10.1/x}, eprint={12345}, archiveprefix={PubMed}}`;
+    const [a, b] = parseBibtex(bib);
+    expect(a).toMatchObject({ citekey: 'Wang2024', title: 'SWE-bench: Can LMs Resolve GitHub Issues?', year: 2024, venue: 'ICSE', arxivId: '2310.06770' });
+    expect(a.authors).toEqual([{ family: 'Wang', given: 'Lin' }, { family: 'Chen', given: 'Yu' }]);
+    expect(b).toMatchObject({ citekey: 'li2023', title: 'A & B', venue: 'TSE', arxivId: undefined });
+  });
 });

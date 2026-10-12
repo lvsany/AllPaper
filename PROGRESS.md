@@ -24,7 +24,8 @@
 ### 2 文献库 — 基本完成
 - 已验证：PDF/BibTeX/arXiv 链接导入；元数据编辑、标签、星标；citekey 全库唯一并同步更新所有 Markdown/JSON 引用；BibTeX 导出。
 - 未验证：PDF 元数据识别准确率（未用 20 篇真实语料）。
-- 未做：集合（多级）、阅读状态筛选、元数据从 S2/DBLP/Crossref 补全。
+- 已验证：BibTeX 导入逐条获取全文（eprint → 标题匹配 arXiv → 开放获取 PDF），保留 bib 引用键与 venue，去重；缺全文的可单篇“获取全文”/批量“补全全文”/“选择本地 PDF”。用真实 arXiv 跑过 3 条（eprint、仅标题、查不到各一）。
+- 未做：集合（多级）、阅读状态筛选、元数据从 S2/DBLP/Crossref 补全。非 arXiv、非开放获取的论文拿不到全文，只能手动补 PDF。
 
 ### 3 搜索与入库 — 部分（已并入文献库页：一个搜索框，输入过滤本地，回车在线检索）
 - 已验证：arXiv / Semantic Scholar / OpenAlex / DBLP 检索、去重、已在库标记、一键入库（arXiv 论文直接获取全文）；配置模型后先把描述改写成多条英文检索式。
@@ -62,5 +63,5 @@
 
 ## 自动化测试
 
-- 单元（`npm test`，55 项）：citekey、去重、LaTeXML 解析（脚本/事件处理器被过滤、占位符、id 对应）、arXiv 编号与 Atom 解析、笔记 Markdown 往返、划词偏移/高亮/重定位（jsdom）、提示词与出处校验、模型提供商（本地桩 HTTP）、论文翻译与缓存、批注、项目笔记、双栏状态机、LaTeX/BibTeX。
+- 单元（`npm test`，63 项）：citekey、去重、LaTeXML 解析（脚本/事件处理器被过滤、占位符、id 对应）、arXiv 编号与 Atom 解析、笔记 Markdown 往返、划词偏移/高亮/重定位（jsdom）、提示词与出处校验、模型提供商（本地桩 HTTP）、论文翻译与缓存、批注、项目笔记、双栏状态机、LaTeX/BibTeX。
 - 端到端冒烟（`npm run smoke`）：真实 arXiv 入库 → 阅读视图含公式与段落译文 → 划词摘录进笔记并带引用 → 助手出处校验 → `note.md` 含锚点引用。依赖联网；模型用本地桩。

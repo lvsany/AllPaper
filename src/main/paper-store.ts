@@ -2,13 +2,15 @@ import { cp, mkdir, readFile, readdir, writeFile, stat } from 'node:fs/promises'
 import { basename, extname, join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { citekeyBase, nextCitekey, paperToBibtex, parseBibtex } from '../core/bibliography';
+import { arxivRefOf } from '../core/arxiv-id';
+import { isDuplicate } from '../core/bib-resolve';
 import { parseLatexmlHtml, placeholdersIntact, TRANSLATABLE } from '../core/arxiv-html';
 import { hash } from '../core/draft';
 import { translationSystem, translationUser, type GlossaryEntry } from '../core/prompts';
-import type { Annotation, ImportResult, Paper, PaperBundle, Paragraph } from '../shared/types';
+import type { Annotation, ImportProgress, ImportResult, Paper, PaperBundle, Paragraph } from '../shared/types';
 import type { SearchPaper } from '../core/deduplicate';
 import { AiError, type AiProvider, type Completion } from './ai';
-import { fetchArxivPaper, type ArxivDocument } from './arxiv';
+import { fetchArxivPaper, findArxivByTitle, findOpenAccessPdf, type ArxivDocument } from './arxiv';
 
 const META = 'meta.json';
 const CONTENT = 'content.json';
@@ -26,6 +28,8 @@ export interface PaperStoreDeps {
   /** Returns undefined when no model service is configured. */
   ai(): AiRuntime | undefined;
   onUsage(task: string, completion: Pick<Completion, 'inputTokens' | 'outputTokens'>): void;
+  /** Pause between network-heavy imports in a batch (arXiv asks clients to space requests). Default 1200 ms. */
+  pauseMs?: number;
 }
 
 interface IndexEntry { paper: Paper; dir: string }
@@ -60,6 +64,7 @@ export class PaperStore {
   constructor(private readonly deps: PaperStoreDeps) {}
 
   private get root() { return this.deps.root; }
+  private pause() { return new Promise<void>((resolve) => setTimeout(resolve, this.deps.pauseMs ?? 1200)); }
   private get papersRoot() { return join(this.root, 'papers'); }
 
   private async load(): Promise<Map<string, IndexEntry>> {
@@ -268,11 +273,19 @@ export class PaperStore {
     return { paper, warnings: extracted.warnings };
   }
 
-  async importBibtex(text: string): Promise<ImportResult[]> {
-    const existing = await this.list();
+  /**
+   * Imports every entry, keeping the entry's own citekey so existing LaTeX references still resolve,
+   * then tries to get the full text for each one (arXiv HTML + PDF, else an open-access PDF).
+   */
+  async importBibtex(text: string, onProgress?: (progress: ImportProgress) => void): Promise<ImportResult[]> {
+    const entries = parseBibtex(text);
+    const known = await this.list();
     const results: ImportResult[] = [];
-    for (const parsed of parseBibtex(text)) {
-      const taken = [...existing, ...results.map((r) => r.paper)].map((p) => p.citekey);
+    for (const [index, parsed] of entries.entries()) {
+      onProgress?.({ message: parsed.title, done: index, total: entries.length });
+      const duplicate = [...known, ...results.map((r) => r.paper)].find((paper) => isDuplicate({ doi: parsed.doi, arxivId: parsed.arxivId, title: parsed.title }, paper));
+      if (duplicate) { results.push({ paper: duplicate, warnings: ['已在文献库中'], status: 'existing' }); continue; }
+      const taken = [...known, ...results.map((r) => r.paper)].map((p) => p.citekey);
       const citekey = nextCitekey(parsed.citekey || citekeyBase(parsed.authors, parsed.year, parsed.title), taken);
       const paper: Paper = {
         id: randomUUID(), citekey, title: parsed.title, authors: parsed.authors, year: parsed.year, venue: parsed.venue, doi: parsed.doi,
@@ -280,10 +293,140 @@ export class PaperStore {
         projects: [], readStatus: 'unread', starred: false, addedAt: new Date().toISOString()
       };
       await this.register(paper, this.newDir(citekey, paper.id), [], 'none');
-      results.push({ paper, warnings: [] });
+      const got = await this.acquireFullText(paper.id).catch((error): ImportResult => ({ paper, warnings: [error instanceof Error ? error.message : String(error)], status: 'metadata-only' }));
+      results.push(got);
+      await this.pause();
     }
+    onProgress?.({ message: '完成', done: entries.length, total: entries.length });
     if (results.length) await this.afterChange();
     return results;
+  }
+
+  /** Gets a body for a paper that only has metadata. Does not rebuild the index; callers do. */
+  private async acquireFullText(id: string, onProgress?: (message: string) => void): Promise<ImportResult> {
+    const entry = await this.entry(id);
+    const paper: Paper = { ...entry.paper };
+    const dirPath = this.dirPath(entry);
+    if (paper.contentSource !== 'none') return { paper, warnings: [], status: paper.contentSource === 'pdf' ? 'pdf-only' : 'full-text' };
+    const warnings: string[] = [];
+
+    let ref = arxivRefOf({ arxivId: paper.arxivId, url: paper.url, doi: paper.doi });
+    if (!ref) {
+      onProgress?.('在 arXiv 上按标题查找…');
+      ref = await findArxivByTitle({ title: paper.title, authors: paper.authors, year: paper.year }).catch(() => undefined);
+    }
+    if (ref) {
+      try {
+        const doc = await fetchArxivPaper(`${ref.id}${ref.version ?? ''}`, onProgress);
+        const built = await this.materialize(paper, dirPath, doc, onProgress);
+        if (built.source !== 'none') {
+          paper.arxivId = paper.arxivId ?? doc.meta.id;
+          paper.arxivCategories = paper.arxivCategories.length ? paper.arxivCategories : doc.meta.categories;
+          paper.abstract = paper.abstract || doc.meta.abstract;
+          paper.year = paper.year ?? doc.meta.year;
+          paper.url = paper.url ?? `https://arxiv.org/abs/${doc.meta.id}`;
+          paper.contentSource = built.source as Paper['contentSource'];
+          await this.writeContent(entry, paper, built.paragraphs, built.source);
+          return { paper, warnings: built.warnings, status: built.source === 'pdf' ? 'pdf-only' : 'full-text' };
+        }
+        warnings.push(...built.warnings);
+      } catch (error) { warnings.push(`arXiv：${error instanceof Error ? error.message : String(error)}`); }
+    }
+
+    if (paper.doi) {
+      onProgress?.('查找开放获取 PDF…');
+      const oa = await findOpenAccessPdf(paper.doi);
+      if (oa) {
+        await mkdir(dirPath, { recursive: true });
+        await writeFile(join(dirPath, 'paper.pdf'), oa.pdf);
+        paper.pdfPath = join(dirPath, 'paper.pdf');
+        const extracted = await extractPdf(paper.pdfPath);
+        const paragraphs = extracted.paragraphs.map((p) => ({ ...p, paperId: paper.id, id: `p${p.order}` }));
+        paper.abstract = paper.abstract || extracted.abstract;
+        paper.contentSource = 'pdf';
+        await this.writeContent(entry, paper, paragraphs, 'pdf');
+        return { paper, warnings: [`来自开放获取来源 ${oa.from} 的 PDF，阅读视图由 PDF 文字层生成。`, ...extracted.warnings], status: 'pdf-only' };
+      }
+    }
+    return { paper, warnings: warnings.length ? warnings : ['没有找到开放获取的全文。'], status: 'metadata-only' };
+  }
+
+  async fetchFullText(id: string, onProgress?: (message: string) => void): Promise<ImportResult> {
+    const result = await this.acquireFullText(id, onProgress);
+    await this.afterChange();
+    return result;
+  }
+
+  async fetchMissingFullTexts(onProgress?: (progress: ImportProgress) => void): Promise<{ total: number; fetched: number }> {
+    const missing = (await this.list()).filter((paper) => paper.contentSource === 'none');
+    let fetched = 0;
+    for (const [index, paper] of missing.entries()) {
+      onProgress?.({ message: paper.title, done: index, total: missing.length });
+      try {
+        const result = await this.acquireFullText(paper.id);
+        if (result.status === 'full-text' || result.status === 'pdf-only') fetched += 1;
+      } catch { /* leave it as metadata only */ }
+      await this.pause();
+    }
+    if (missing.length) await this.afterChange();
+    onProgress?.({ message: '完成', done: missing.length, total: missing.length });
+    return { total: missing.length, fetched };
+  }
+
+  /** Adds a PDF the user already has to an existing paper. */
+  async attachPdf(id: string, path: string): Promise<ImportResult> {
+    const entry = await this.entry(id);
+    const paper: Paper = { ...entry.paper };
+    const dirPath = this.dirPath(entry);
+    await cp(path, join(dirPath, 'paper.pdf'));
+    paper.pdfPath = join(dirPath, 'paper.pdf');
+    const extracted = await extractPdf(paper.pdfPath);
+    if (paper.contentSource === 'none') {
+      paper.abstract = paper.abstract || extracted.abstract;
+      paper.contentSource = 'pdf';
+      await this.writeContent(entry, paper, extracted.paragraphs.map((p) => ({ ...p, paperId: paper.id, id: `p${p.order}` })), 'pdf');
+    } else {
+      await writeFile(join(dirPath, META), JSON.stringify(paper, null, 2));
+      entry.paper = paper;
+    }
+    await this.afterChange();
+    return { paper, warnings: extracted.warnings, status: 'pdf-only' };
+  }
+
+  private async writeContent(entry: IndexEntry, paper: Paper, paragraphs: Paragraph[], source: string): Promise<void> {
+    const dirPath = this.dirPath(entry);
+    await writeFile(join(dirPath, META), JSON.stringify(paper, null, 2));
+    await writeFile(join(dirPath, CONTENT), JSON.stringify({ source, paragraphs }, null, 2));
+    entry.paper = paper;
+    this.bundles.delete(paper.id);
+  }
+
+  /** Turns fetched HTML/PDF into paragraphs, saving images and the PDF into the paper folder. */
+  private async materialize(paper: Paper, dirPath: string, doc: Pick<ArxivDocument, 'html' | 'pdf'>, onProgress?: (message: string) => void): Promise<{ paragraphs: Paragraph[]; source: string; warnings: string[] }> {
+    const warnings: string[] = [];
+    let paragraphs: Paragraph[] = [];
+    let source = 'none';
+    if (doc.html) {
+      onProgress?.('正在解析正文…');
+      const parsed = parseLatexmlHtml(doc.html.text, { paperId: paper.id, baseUrl: doc.html.url });
+      if (parsed.paragraphs.length > 5) {
+        await mkdir(join(dirPath, 'assets'), { recursive: true });
+        onProgress?.(`正在保存 ${parsed.images.length} 张图片…`);
+        paragraphs = await localizeImages(parsed.paragraphs, parsed.images, join(dirPath, 'assets'));
+        source = doc.html.source;
+      } else warnings.push('HTML 版本正文过短，已改用 PDF 文字层。');
+    }
+    if (doc.pdf) {
+      await writeFile(join(dirPath, 'paper.pdf'), doc.pdf);
+      paper.pdfPath = join(dirPath, 'paper.pdf');
+      if (!paragraphs.length) {
+        const extracted = await extractPdf(paper.pdfPath);
+        paragraphs = extracted.paragraphs.map((p) => ({ ...p, paperId: paper.id, id: `p${p.order}` }));
+        source = 'pdf';
+        warnings.push(...extracted.warnings, '该论文没有可用的 HTML 版本，阅读视图由 PDF 文字层生成，段落与公式可能不准确。');
+      }
+    } else if (!paragraphs.length) warnings.push('未能获取全文（HTML 与 PDF 均不可用）。');
+    return { paragraphs, source, warnings };
   }
 
   /** Fetches metadata, the structured HTML (arXiv, then ar5iv) and the PDF for an arXiv paper. */
@@ -291,6 +434,7 @@ export class PaperStore {
     const doc = await fetchArxivPaper(input, onProgress);
     const existing = await this.list();
     const duplicate = existing.find((paper) => paper.arxivId === doc.meta.id);
+    if (duplicate?.contentSource === 'none') return this.fetchFullText(duplicate.id, onProgress);
     if (duplicate) return { paper: duplicate, warnings: ['该论文已在文献库中。'] };
     return this.storeArxiv(doc, existing, onProgress);
   }
@@ -309,28 +453,9 @@ export class PaperStore {
     const path = join(this.papersRoot, dir);
     await mkdir(join(path, 'assets'), { recursive: true });
 
-    let paragraphs: Paragraph[] = [];
-    let source = 'none';
-    if (doc.html) {
-      onProgress?.('正在解析正文…');
-      const parsed = parseLatexmlHtml(doc.html.text, { paperId: paper.id, baseUrl: doc.html.url });
-      if (parsed.paragraphs.length > 5) {
-        paragraphs = parsed.paragraphs;
-        source = doc.html.source;
-        onProgress?.(`正在保存 ${parsed.images.length} 张图片…`);
-        paragraphs = await localizeImages(paragraphs, parsed.images, join(path, 'assets'));
-      } else warnings.push('HTML 版本正文过短，已改用 PDF 文字层。');
-    }
-    if (doc.pdf) {
-      await writeFile(join(path, 'paper.pdf'), doc.pdf);
-      paper.pdfPath = join(path, 'paper.pdf');
-      if (!paragraphs.length) {
-        const extracted = await extractPdf(join(path, 'paper.pdf'));
-        paragraphs = extracted.paragraphs.map((p) => ({ ...p, paperId: paper.id, id: `p${p.order}` }));
-        source = 'pdf';
-        warnings.push(...extracted.warnings, '该论文没有可用的 HTML 版本，阅读视图由 PDF 文字层生成，段落与公式可能不准确。');
-      }
-    } else if (!paragraphs.length) warnings.push('未能获取全文（HTML 与 PDF 均不可用）。');
+    const built = await this.materialize(paper, path, doc, onProgress);
+    const { paragraphs, source } = built;
+    warnings.push(...built.warnings);
     paper.contentSource = source as Paper['contentSource'];
     await this.register(paper, dir, paragraphs, source);
     await this.afterChange();

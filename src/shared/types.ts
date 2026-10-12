@@ -95,7 +95,12 @@ export interface AssistantRequest {
 }
 export interface TranslateResult { translations: Record<string, string>; failed: string[]; error?: string }
 export interface AiStatus { configured: boolean; provider: AiProviderKind; mock: boolean }
-export interface ImportResult { paper: Paper; warnings: string[]; }
+export interface ImportResult {
+  paper: Paper; warnings: string[];
+  /** Where a bibliography entry ended up; undefined for single imports. */
+  status?: 'full-text' | 'pdf-only' | 'metadata-only' | 'existing';
+}
+export interface ImportProgress { message: string; done?: number; total?: number }
 
 /** One row of the keys table. Secret rows keep their value encrypted outside the library. */
 export interface MemoRow {
@@ -130,6 +135,12 @@ export interface DesktopApi {
     importBibtex(): Promise<ImportResult[] | undefined>;
     importDroppedPdf(path: string): Promise<ImportResult | undefined>;
     importArxiv(input: string): Promise<ImportResult>;
+    /** Tries arXiv (HTML + PDF), then an open-access PDF, for a paper that only has metadata. */
+    fetchFullText(id: string): Promise<ImportResult>;
+    /** Same for every paper without a body; resolves with how many got one. */
+    fetchMissingFullTexts(): Promise<{ total: number; fetched: number }>;
+    attachPdf(id: string): Promise<ImportResult | undefined>;
+    onImportProgress(listener: (progress: ImportProgress) => void): () => void;
     importSearchRecord(record: import('../core/deduplicate').SearchPaper): Promise<ImportResult>;
     update(id: string, patch: Partial<Paper>): Promise<Paper>;
     changeCitekey(id: string, citekey: string): Promise<Paper>;

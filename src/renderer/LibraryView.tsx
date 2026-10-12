@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Check, ChevronRight, Download, ExternalLink, FileUp, LibraryBig, Link2, LoaderCircle, Pencil, Search, Star, Upload } from 'lucide-react';
+import { BookOpen, Check, ChevronRight, Download, ExternalLink, FileText, FileUp, LibraryBig, Link2, LoaderCircle, Pencil, Search, Star, Upload } from 'lucide-react';
 import { parseArxivId } from '../core/arxiv-id';
 import type { SearchPaper } from '../core/deduplicate';
-import type { Paper } from '../shared/types';
+import type { ImportResult, Paper } from '../shared/types';
 import { useWorkspace } from './workspace';
 
 const cleanError = (error: unknown, fallback: string) =>
@@ -24,6 +24,11 @@ export function LibraryView({ onRead }: { onRead(paper: Paper): void }) {
 
   const load = async () => { setPapers(await window.allPaper.papers.list()); await ws.refreshPapers(); };
   useEffect(() => { void load(); }, []);
+  useEffect(() => window.allPaper.papers.onImportProgress((progress) => {
+    if (progress.total) setBusy(`获取全文 ${Math.min(progress.done ?? 0, progress.total)}/${progress.total}`);
+    setStatusLine(progress.total && progress.message !== '完成' ? progress.message : progress.message === '完成' ? '' : progress.message);
+  }), []);
+  const [statusLine, setStatusLine] = useState('');
 
   const arxiv = useMemo(() => parseArxivId(query), [query]);
   const local = useMemo(() => {
@@ -77,13 +82,30 @@ export function LibraryView({ onRead }: { onRead(paper: Paper): void }) {
       if (result) await afterImport(result.paper, result.warnings[0]);
     } catch (error) { setNotice(cleanError(error, '导入失败')); } finally { setBusy(''); }
   };
+  const summarize = (results: ImportResult[]) => {
+    const count = (status: ImportResult['status']) => results.filter((r) => r.status === status).length;
+    const parts = [`共 ${results.length} 条`, `${count('full-text')} 篇获得 HTML 全文`];
+    if (count('pdf-only')) parts.push(`${count('pdf-only')} 篇只有 PDF`);
+    if (count('existing')) parts.push(`${count('existing')} 篇已在库中`);
+    if (count('metadata-only')) parts.push(`${count('metadata-only')} 篇没有找到开放全文`);
+    return `已导入：${parts.join('，')}。`;
+  };
   const importBibtex = async () => {
     try {
       setBusy('正在导入…');
       const result = await window.allPaper.papers.importBibtex();
-      if (result) { setNotice(`已导入 ${result.length} 篇文献`); await load(); }
-    } catch (error) { setNotice(cleanError(error, '导入失败')); } finally { setBusy(''); }
+      if (result) { setNotice(summarize(result)); await load(); }
+    } catch (error) { setNotice(cleanError(error, '导入失败')); } finally { setBusy(''); setStatusLine(''); }
   };
+  const fetchMissing = async () => {
+    try {
+      setBusy('正在获取全文…');
+      const { total, fetched } = await window.allPaper.papers.fetchMissingFullTexts();
+      setNotice(total ? `补全完成：${total} 篇中获得了 ${fetched} 篇的全文。` : '所有文献都已有全文。');
+      await load();
+    } catch (error) { setNotice(cleanError(error, '获取失败')); } finally { setBusy(''); setStatusLine(''); }
+  };
+  const missing = papers.filter((paper) => paper.contentSource === 'none').length;
 
   const showOnline = online && query.trim() && !arxiv;
   const cjk = /[\u4e00-\u9fff]/.test(query);
@@ -97,9 +119,10 @@ export function LibraryView({ onRead }: { onRead(paper: Paper): void }) {
       <header className="library-header">
         <div><div className="eyebrow">文献库 · {papers.length} 篇</div><h1>文献库与搜索</h1></div>
         <div className="toolbar">
+          {missing > 0 && <button className="secondary" onClick={() => void fetchMissing()} disabled={Boolean(busy)} title="对没有正文的文献，按 arXiv / 开放获取来源尝试获取全文"><LibraryBig size={15} /> 补全全文 ({missing})</button>}
           <button className="secondary" onClick={() => void importBibtex()} disabled={Boolean(busy)}><FileUp size={15} /> 导入 BibTeX</button>
           <button className="secondary" onClick={() => void window.allPaper.papers.exportBibtex()}><Download size={15} /> 导出 BibTeX</button>
-          <button className="primary" onClick={() => void importPdf()} disabled={Boolean(busy)}><Upload size={15} />{busy || '导入 PDF'}</button>
+          <button className="primary" onClick={() => void importPdf()} disabled={Boolean(busy)}>{busy ? <LoaderCircle size={15} className="spin" /> : <Upload size={15} />}{busy || '导入 PDF'}</button>
         </div>
       </header>
 
@@ -116,6 +139,7 @@ export function LibraryView({ onRead }: { onRead(paper: Paper): void }) {
         </button>
       </form>
 
+      {busy && statusLine && <div className="notice"><LoaderCircle size={15} className="spin" />{busy}：{statusLine}</div>}
       {notice && <div className="notice"><Check size={15} />{notice}<button onClick={() => setNotice('')}>×</button></div>}
 
       <div className="library-content">
@@ -180,7 +204,7 @@ export function LibraryView({ onRead }: { onRead(paper: Paper): void }) {
 
         <aside className="paper-inspector">
           {selected
-            ? <Inspector paper={selected} onChanged={async (paper) => { setSelected(paper); await load(); }} onRead={() => onRead(selected)} />
+            ? <Inspector paper={selected} onChanged={async (paper) => { setSelected(paper); await load(); }} onRead={() => onRead(selected)} onBusy={(text) => { setBusy(text); if (!text) setStatusLine(''); }} onNotice={setNotice} />
             : <div className="inspector-empty">选择一篇文献查看和编辑元数据</div>}
         </aside>
       </div>
@@ -188,9 +212,20 @@ export function LibraryView({ onRead }: { onRead(paper: Paper): void }) {
   );
 }
 
-function Inspector({ paper, onChanged,onRead }: { paper: Paper; onChanged: (paper: Paper) => Promise<void>;onRead:()=>void }) {
+function Inspector({ paper, onChanged, onRead, onBusy, onNotice }: { paper: Paper; onChanged: (paper: Paper) => Promise<void>; onRead: () => void; onBusy: (text: string) => void; onNotice: (text: string) => void }) {
+  const [working, setWorking] = useState(false);
+  const run = async (label: string, action: () => Promise<ImportResult | undefined>) => {
+    try {
+      setWorking(true); onBusy(label);
+      const result = await action();
+      if (result) {
+        onNotice(result.status === 'metadata-only' ? `没有找到这篇的开放全文：${result.warnings[0] ?? ''}` : result.status === 'pdf-only' ? '已获得 PDF 全文（阅读视图由 PDF 文字层生成）。' : '已获得全文。');
+        await onChanged(result.paper);
+      }
+    } catch (error) { onNotice(cleanError(error, '获取失败')); } finally { setWorking(false); onBusy(''); }
+  };
   const [edit, setEdit] = useState(false); const [title, setTitle] = useState(paper.title); const [citekey, setCitekey] = useState(paper.citekey); const [tags, setTags] = useState(paper.tags.join(', ')); const [error, setError] = useState('');
   useEffect(() => { setTitle(paper.title); setCitekey(paper.citekey); setTags(paper.tags.join(', ')); setEdit(false); }, [paper]);
   const save = async () => { try { let next = paper; if (citekey !== paper.citekey) next = await window.allPaper.papers.changeCitekey(paper.id, citekey); next = await window.allPaper.papers.update(paper.id, { title, tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean) }); await onChanged(next); setEdit(false); } catch (reason) { setError(reason instanceof Error ? reason.message : '保存失败'); } };
-  return <>{edit ? <div className="metadata-form"><h2>编辑元数据</h2><label>标题<input value={title} onChange={(e) => setTitle(e.target.value)}/></label><label>引用键<input value={citekey} onChange={(e) => setCitekey(e.target.value)}/></label><label>标签（逗号分隔）<input value={tags} onChange={(e) => setTags(e.target.value)}/></label>{error && <p className="error-text">{error}</p>}<div className="row"><button className="secondary" onClick={() => setEdit(false)}>取消</button><button className="primary" onClick={() => void save()}>保存</button></div></div> : <div className="inspector"><div className="inspector-top"><span className="source-pill">{paper.contentSource === 'none' ? '缺全文' : `正文：${({'arxiv-html':'arXiv HTML',ar5iv:'ar5iv',pdf:'PDF 文字层'} as Record<string,string>)[paper.contentSource] ?? paper.contentSource}`}</span><button className="icon-button" title="编辑元数据" onClick={() => setEdit(true)}><Pencil size={15}/></button></div><h2>{paper.title}</h2><p className="authors">{paper.authors.map((author) => [author.given, author.family].filter(Boolean).join(' ')).join(', ')}</p><dl><dt>引用键</dt><dd><code>{paper.citekey}</code></dd><dt>状态</dt><dd>{paper.readStatus === 'unread' ? '未读' : paper.readStatus}</dd><dt>标签</dt><dd>{paper.tags.length ? paper.tags.map((tag) => <span className="tag" key={tag}>{tag}</span>) : '—'}</dd>{paper.abstract && <><dt>摘要</dt><dd className="abstract">{paper.abstract}</dd></>}</dl>{paper.contentSource!=='none'?<button className="primary full" onClick={onRead}>打开阅读视图</button>:<p className="muted-note">这篇只有元数据。拖入它的 PDF，或粘贴它的 arXiv 链接重新入库即可获得全文。</p>}</div>}</>;
+  return <>{edit ? <div className="metadata-form"><h2>编辑元数据</h2><label>标题<input value={title} onChange={(e) => setTitle(e.target.value)}/></label><label>引用键<input value={citekey} onChange={(e) => setCitekey(e.target.value)}/></label><label>标签（逗号分隔）<input value={tags} onChange={(e) => setTags(e.target.value)}/></label>{error && <p className="error-text">{error}</p>}<div className="row"><button className="secondary" onClick={() => setEdit(false)}>取消</button><button className="primary" onClick={() => void save()}>保存</button></div></div> : <div className="inspector"><div className="inspector-top"><span className="source-pill">{paper.contentSource === 'none' ? '缺全文' : `正文：${({'arxiv-html':'arXiv HTML',ar5iv:'ar5iv',pdf:'PDF 文字层'} as Record<string,string>)[paper.contentSource] ?? paper.contentSource}`}</span><button className="icon-button" title="编辑元数据" onClick={() => setEdit(true)}><Pencil size={15}/></button></div><h2>{paper.title}</h2><p className="authors">{paper.authors.map((author) => [author.given, author.family].filter(Boolean).join(' ')).join(', ')}</p><dl><dt>引用键</dt><dd><code>{paper.citekey}</code></dd><dt>状态</dt><dd>{paper.readStatus === 'unread' ? '未读' : paper.readStatus}</dd><dt>标签</dt><dd>{paper.tags.length ? paper.tags.map((tag) => <span className="tag" key={tag}>{tag}</span>) : '—'}</dd>{paper.abstract && <><dt>摘要</dt><dd className="abstract">{paper.abstract}</dd></>}</dl>{paper.contentSource!=='none'?<button className="primary full" onClick={onRead}>打开阅读视图</button>:<div className="no-text"><p className="muted-note">这篇只有元数据，还没有正文。</p><button className="primary full" disabled={working} onClick={() => void run('获取全文', () => window.allPaper.papers.fetchFullText(paper.id))}>{working ? <LoaderCircle size={15} className="spin" /> : <LibraryBig size={15} />} 获取全文</button><button className="secondary full" disabled={working} onClick={() => void run('导入 PDF', () => window.allPaper.papers.attachPdf(paper.id))}><FileText size={15} /> 选择本地 PDF…</button></div>}</div>}</>;
 }

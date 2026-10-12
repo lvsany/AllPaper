@@ -350,7 +350,7 @@ export function ReaderView({ paper, anchor, onBack, onOpenPaper }: Props) {
                   <div className="rd-empty">
                     <FileText size={30} />
                     <h2>这篇论文还没有可阅读的正文</h2>
-                    <p>只入库了元数据。你可以在文献库中拖入它的 PDF，或用 arXiv 链接重新入库以获取 HTML 正文。</p>
+                    <p>只入库了元数据。回到文献库选中它，点“获取全文”（会尝试 arXiv 和开放获取来源），或“选择本地 PDF”。</p>
                     {paper.url && <button className="secondary" onClick={() => void window.allPaper.library.openExternal(paper.url!)}>在浏览器中打开来源</button>}
                   </div>
                 )

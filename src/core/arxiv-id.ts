@@ -39,15 +39,12 @@ export function splitName(name: string): Author {
   return parts.length > 1 ? { given: parts.slice(0, -1).join(' '), family: parts.at(-1)! } : { family: parts[0] ?? 'Unknown' };
 }
 
-export function parseArxivAtom(xml: string): ArxivMetadata | undefined {
-  const entry = xml.match(/<entry>([\s\S]*?)<\/entry>/)?.[1];
-  if (!entry) return undefined;
+function parseEntry(entry: string): ArxivMetadata | undefined {
   const take = (tag: string) => {
     const value = entry.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`))?.[1];
     return value === undefined ? undefined : decode(value.replace(/\s+/g, ' ').trim());
   };
-  const url = take('id') ?? '';
-  const ref = parseArxivId(url);
+  const ref = parseArxivId(take('id') ?? '');
   const title = take('title');
   if (!ref || !title) return undefined;
   return {
@@ -58,4 +55,22 @@ export function parseArxivAtom(xml: string): ArxivMetadata | undefined {
     categories: [...entry.matchAll(/<category[^>]*term="([^"]+)"/g)].map((m) => m[1]),
     doi: take('arxiv:doi'), journalRef: take('arxiv:journal_ref'), comment: take('arxiv:comment')
   };
+}
+
+export function parseArxivFeed(xml: string): ArxivMetadata[] {
+  return [...xml.matchAll(/<entry>([\s\S]*?)<\/entry>/g)].map((m) => parseEntry(m[1])).filter((m): m is ArxivMetadata => Boolean(m));
+}
+
+export function parseArxivAtom(xml: string): ArxivMetadata | undefined {
+  return parseArxivFeed(xml)[0];
+}
+
+/** The arXiv paper a bibliography entry points at, from `eprint`, a link or an arXiv-issued DOI. */
+export function arxivRefOf(fields: { arxivId?: string; url?: string; doi?: string }): ArxivRef | undefined {
+  for (const value of [fields.arxivId, fields.url]) {
+    const ref = value ? parseArxivId(value) : undefined;
+    if (ref) return ref;
+  }
+  const issued = fields.doi?.match(/10\.48550\/arxiv\.(.+)$/i);
+  return issued ? parseArxivId(issued[1]) : undefined;
 }

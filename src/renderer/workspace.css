@@ -331,3 +331,6 @@ mark.hl-active { outline: 2px solid var(--accent); outline-offset: 1px; }
 .st { padding: 1px 6px; border-radius: 4px; background: #00000010; }
 .st-synced { color: #3d6b1d; } .st-failed { color: #a8422f; } .st-changed { color: #9a5b12; } .st-locked { color: #5b4aa0; }
 .new-block { display: block; margin: 80px auto; border: 1px dashed var(--trans-bar); background: var(--trans-bg); color: var(--accent); border-radius: 8px; padding: 13px 18px; }
+
+.no-text { display: grid; gap: 8px; margin-top: 8px; }
+.no-text .full { display: flex; align-items: center; justify-content: center; gap: 6px; }

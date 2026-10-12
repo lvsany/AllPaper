@@ -24,6 +24,14 @@ const api: DesktopApi = {
     importBibtex: () => invoke('papers:import-bibtex'),
     importDroppedPdf: (path) => invoke('papers:import-dropped-pdf', path),
     importArxiv: (input) => invoke('papers:import-arxiv', input),
+    fetchFullText: (id) => invoke('papers:fetch-full-text', id),
+    fetchMissingFullTexts: () => invoke('papers:fetch-missing'),
+    attachPdf: (id) => invoke('papers:attach-pdf', id),
+    onImportProgress: (listener) => {
+      const handler = (_event: unknown, payload: Parameters<typeof listener>[0]) => listener(payload);
+      ipcRenderer.on('papers:import-progress', handler);
+      return () => { ipcRenderer.removeListener('papers:import-progress', handler); };
+    },
     importSearchRecord: (record) => invoke('papers:import-search-record', record),
     update: (id, patch) => invoke('papers:update', id, patch),
     changeCitekey: (id, citekey) => invoke('papers:change-citekey', id, citekey),

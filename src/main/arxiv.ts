@@ -1,4 +1,5 @@
-import { extractDoi, parseArxivAtom, parseArxivId, type ArxivMetadata } from '../core/arxiv-id';
+import { extractDoi, parseArxivAtom, parseArxivFeed, parseArxivId, type ArxivMetadata, type ArxivRef } from '../core/arxiv-id';
+import { isSameWork, type WorkLike } from '../core/bib-resolve';
 import { looksLikeLatexml } from '../core/arxiv-html';
 
 export interface ArxivDocument {
@@ -52,4 +53,36 @@ export async function fetchArxivPaper(input: string, onProgress?: (message: stri
     }
   } catch { /* the HTML version is enough to read */ }
   return { meta: { ...meta, version }, html, pdf };
+}
+
+/** Looks an arXiv paper up by title; only an unambiguous match is returned. */
+export async function findArxivByTitle(work: WorkLike): Promise<ArxivRef | undefined> {
+  const phrase = work.title.replace(/["“”]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (phrase.length < 12) return undefined;
+  const url = `https://export.arxiv.org/api/query?search_query=${encodeURIComponent(`ti:"${phrase}"`)}&max_results=5`;
+  const page = await getText(url, 25_000);
+  if (!page.ok) return undefined;
+  const hit = parseArxivFeed(page.text).find((candidate) => isSameWork(work, candidate));
+  return hit ? { id: hit.id, version: undefined } : undefined;
+}
+
+async function downloadPdf(url: string): Promise<Buffer | undefined> {
+  try {
+    const response = await fetch(url, { headers: { 'user-agent': USER_AGENT }, redirect: 'follow', signal: AbortSignal.timeout(60_000) });
+    if (!response.ok) return undefined;
+    const bytes = Buffer.from(await response.arrayBuffer());
+    return bytes.length <= MAX_PDF_BYTES && bytes.subarray(0, 5).toString() === '%PDF-' ? bytes : undefined;
+  } catch { return undefined; }
+}
+
+/** Open-access PDF for a DOI via OpenAlex; publisher paywalls simply yield nothing. */
+export async function findOpenAccessPdf(doi: string): Promise<{ pdf: Buffer; from: string } | undefined> {
+  try {
+    const response = await fetch(`https://api.openalex.org/works/doi:${encodeURIComponent(doi)}`, { headers: { 'user-agent': USER_AGENT }, signal: AbortSignal.timeout(20_000) });
+    if (!response.ok) return undefined;
+    const work = await response.json() as { best_oa_location?: { pdf_url?: string }; open_access?: { oa_url?: string } };
+    const url = work.best_oa_location?.pdf_url ?? work.open_access?.oa_url;
+    const pdf = url ? await downloadPdf(url) : undefined;
+    return pdf && url ? { pdf, from: new URL(url).hostname } : undefined;
+  } catch { return undefined; }
 }
