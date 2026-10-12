@@ -10,6 +10,8 @@ export function authorsShort(paper: Paper): string {
 
 interface Workspace {
   papers: Paper[];
+  /** False until the first list has arrived, so "paper not found" is not shown while loading. */
+  papersLoaded: boolean;
   projects: Project[];
   currentProject?: Project;
   ai: AiStatus;
@@ -30,13 +32,14 @@ const STORAGE_KEY = 'allpaper.currentProject';
 
 export function WorkspaceProvider({ children, libraryReady, openSettings, settings }: { children: ReactNode; libraryReady: boolean; openSettings(): void; settings: Settings }) {
   const [papers, setPapers] = useState<Paper[]>([]);
+  const [papersLoaded, setPapersLoaded] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [currentId, setCurrentId] = useState<string | undefined>(() => {
     try { return localStorage.getItem(STORAGE_KEY) ?? undefined; } catch { return undefined; }
   });
   const [ai, setAi] = useState<AiStatus>({ configured: false, provider: 'anthropic', mock: false });
 
-  const refreshPapers = useCallback(async () => { if (libraryReady) setPapers(await window.allPaper.papers.list()); }, [libraryReady]);
+  const refreshPapers = useCallback(async () => { if (libraryReady) { setPapers(await window.allPaper.papers.list()); setPapersLoaded(true); } }, [libraryReady]);
   const refreshProjects = useCallback(async () => { if (libraryReady) setProjects(await window.allPaper.projects.list()); }, [libraryReady]);
   const refreshAi = useCallback(async () => { setAi(await window.allPaper.ai.status()); }, []);
 
@@ -58,7 +61,7 @@ export function WorkspaceProvider({ children, libraryReady, openSettings, settin
   const value = useMemo<Workspace>(() => {
     const byKey = new Map(papers.map((paper) => [paper.citekey, paper]));
     return {
-      papers, projects, ai, settings,
+      papers, papersLoaded, projects, ai, settings,
       currentProject: projects.find((project) => project.id === currentId) ?? projects[0],
       refreshPapers, refreshProjects, refreshAi, selectProject, createProject, openSettings,
       paperByKey: (key) => byKey.get(key),
@@ -72,7 +75,7 @@ export function WorkspaceProvider({ children, libraryReady, openSettings, settin
         return ref.page ? `${label}, p.${ref.page}` : label;
       }
     };
-  }, [papers, projects, ai, settings, currentId, refreshPapers, refreshProjects, refreshAi, selectProject, createProject, openSettings]);
+  }, [papers, papersLoaded, projects, ai, settings, currentId, refreshPapers, refreshProjects, refreshAi, selectProject, createProject, openSettings]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
