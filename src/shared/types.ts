@@ -7,9 +7,10 @@ export interface Settings {
   aiModelTranslation: string;
   aiModelWriting: string;
   aiModelReasoning: string;
-  /** Estimated price in USD per million tokens, used for the usage page only. */
-  priceInPerMTok: number;
-  priceOutPerMTok: number;
+  /** Currency label shown before amounts, e.g. `CA$`, `$` or `¥`. */
+  currency: string;
+  /** Price per million tokens in that currency for each model slot, used for the spend estimate. */
+  prices: import('../core/usage').Prices;
   monthlyBudget: number;
   glossary: string;
   translationStyle: 'muted' | 'border' | 'background';
@@ -25,8 +26,8 @@ export const defaultSettings: Settings = {
   aiModelTranslation: 'claude-haiku-5-5',
   aiModelWriting: 'claude-sonnet-5-5',
   aiModelReasoning: 'claude-opus-5-5',
-  priceInPerMTok: 0,
-  priceOutPerMTok: 0,
+  currency: 'CA$',
+  prices: { translate: { input: 0, output: 0 }, write: { input: 0, output: 0 }, reason: { input: 0, output: 0 } },
   monthlyBudget: 0,
   glossary: '',
   translationStyle: 'border',
@@ -185,7 +186,7 @@ export interface DesktopApi {
     copySecret(id: string): Promise<void>;
   };
   usage: { get(): Promise<UsageSummary> };
-  events: { on(channel: 'shortcut:quick-idea' | 'shortcut:command', listener: () => void): () => void };
+  events: { on(channel: 'shortcut:quick-idea' | 'shortcut:command' | 'usage:changed', listener: () => void): () => void };
 }
 
 declare global { interface Window { allPaper: DesktopApi } }

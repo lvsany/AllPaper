@@ -334,3 +334,12 @@ mark.hl-active { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .no-text { display: grid; gap: 8px; margin-top: 8px; }
 .no-text .full { display: flex; align-items: center; justify-content: center; gap: 6px; }
+
+.token-usage { margin: 2px 0 0; width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; border: 0; background: transparent; color: #8e978b; padding: 6px 9px 0; font-size: 11.5px; text-align: left; }
+.token-usage b { color: #c9d1c4; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.token-usage b.dim { color: #7a8377; font-weight: 400; }
+.token-usage:hover span { color: #e2e8dd; }
+
+.model-grid { display: grid; gap: 10px; margin-top: 14px; }
+.model-row { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: end; }
+.model-row label { margin-top: 0 !important; }

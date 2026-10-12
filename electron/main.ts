@@ -45,10 +45,10 @@ function recordUsage(task: string, completion: Pick<Completion, 'inputTokens' | 
     item.calls += 1;
     item.inputTokens += completion.inputTokens;
     item.outputTokens += completion.outputTokens;
-    item.estimatedCost += (completion.inputTokens * settings.priceInPerMTok + completion.outputTokens * settings.priceOutPerMTok) / 1_000_000;
     data.byTask[task] = item;
     await mkdir(app.getPath('userData'), { recursive: true });
     await writeFile(usagePath(), JSON.stringify(data, null, 2));
+    mainWindow?.webContents.send('usage:changed');
   }).catch(() => undefined);
 }
 
@@ -68,6 +68,11 @@ function publicSettings(raw: Record<string, unknown>): Settings {
   const merged = { ...defaultSettings, ...raw } as Settings & { aiProvider: string };
   // Earlier builds offered a "mock" provider that only did dictionary substitution; it no longer exists.
   const aiProvider = merged.aiProvider === 'openai-compatible' ? 'openai-compatible' : 'anthropic';
+  // earlier builds had one price pair for everything
+  if (!raw.prices && (raw.priceInPerMTok || raw.priceOutPerMTok)) {
+    const pair = { input: Number(raw.priceInPerMTok) || 0, output: Number(raw.priceOutPerMTok) || 0 };
+    merged.prices = { translate: pair, write: pair, reason: pair };
+  }
   const keyConfigured = Boolean(raw.encryptedApiKey);
   const aiConfigured = useMock() || (aiProvider === 'anthropic' ? keyConfigured : keyConfigured || Boolean(merged.aiBaseUrl?.trim()));
   return { ...merged, aiProvider, apiKeyConfigured: keyConfigured, aiConfigured, aiMock: useMock() };

@@ -9,6 +9,8 @@ import { ProjectView } from './ProjectView';
 import { ScheduleView } from './ScheduleView';
 import { MemoView } from './MemoView';
 import { appendToNote } from './notes/noteBus';
+import { costOf, formatMoney, formatTokens, isPriced, taskCost, totalUsage } from '../core/usage';
+import type { UsageSummary } from '../shared/types';
 import { WorkspaceProvider, useWorkspace } from './workspace';
 
 type Screen = 'library' | 'projects' | 'schedule' | 'memo' | 'settings';
@@ -69,6 +71,7 @@ function Shell({ screen, setScreen, status, settings, refresh }: { screen: Scree
           <div className={`ai-dot ${ws.ai.configured ? 'on' : ''}`} title={ws.ai.mock ? '测试用 Mock，输出不是真实模型' : ''}>
             {ws.ai.configured ? (ws.ai.mock ? 'AI：测试 Mock' : 'AI 已配置') : <button onClick={() => go('settings')}>AI 未配置</button>}
           </div>
+          <TokenUsage onOpen={() => go('settings')} />
         </div>
       </aside>
       <main className="workspace">
@@ -86,6 +89,34 @@ function Shell({ screen, setScreen, status, settings, refresh }: { screen: Scree
       {quickOpen && <QuickIdea close={() => setQuickOpen(false)} onSaved={(name) => { setQuickOpen(false); setToast(`已记入「${name}」的笔记`); }} />}
       {toast && <div className="toast"><Check size={14} /> {toast}</div>}
     </div>
+  );
+}
+
+/** This month's model usage, bottom-left of the sidebar; updates after every call. */
+function TokenUsage({ onOpen }: { onOpen(): void }) {
+  const ws = useWorkspace();
+  const [usage, setUsage] = useState<UsageSummary>();
+  useEffect(() => {
+    const load = () => void window.allPaper.usage.get().then(setUsage);
+    load();
+    return window.allPaper.events.on('usage:changed', load);
+  }, []);
+  if (!usage) return null;
+  const { currency, prices } = ws.settings;
+  const priced = isPriced(prices);
+  const total = totalUsage(usage.byTask);
+  const spend = costOf(usage.byTask, prices);
+  const lines = Object.entries(usage.byTask).map(([task, item]) => `${task}：${item.calls} 次 · 输入 ${formatTokens(item.inputTokens)} · 输出 ${formatTokens(item.outputTokens)}${priced ? ` · ${formatMoney(taskCost(task, item, prices), currency)}` : ''}`);
+  const title = [
+    `${usage.month} 月累计：输入 ${formatTokens(total.inputTokens)} · 输出 ${formatTokens(total.outputTokens)} · ${total.calls} 次调用`,
+    ...lines,
+    priced ? '花费 = token 数 × 设置里各模型档位的单价，仅供参考，不含缓存折扣。' : '在设置里填入各模型的单价后显示花费估算。'
+  ].join('\n');
+  return (
+    <button className="token-usage" title={title} onClick={onOpen}>
+      <span>本月 token</span><b>{formatTokens(total.inputTokens + total.outputTokens)}</b>
+      <span>本月花费</span><b className={priced ? '' : 'dim'}>{priced ? formatMoney(spend, currency) : '未设单价'}</b>
+    </button>
   );
 }
 
