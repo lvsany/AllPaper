@@ -2,7 +2,17 @@
 
 面向个人计算机科研的本地优先桌面工作台：搜集论文、像 arxiv.org/html 一样阅读并在每段下方显示译文、把摘录和想法记进项目笔记、用助手问答，以及中英双栏写作。
 
-## 运行
+## 安装（发布版）
+
+从 `release/AllPaper-0.1.0-arm64.dmg`（Apple Silicon，macOS 13+）安装：打开 DMG，把 AllPaper 拖进“应用程序”。包未签名，首次打开请在访达中**右键 → 打开**；若仍被拦截，执行：
+
+```bash
+xattr -dr com.apple.quarantine /Applications/AllPaper.app
+```
+
+校验和见 `release/SHA256SUMS.txt`。版本说明见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 从源码运行
 
 要求 macOS 13+、Node.js 20+。
 

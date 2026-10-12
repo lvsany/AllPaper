@@ -44,7 +44,11 @@ writeFileSync(join(userData, 'settings.json'), JSON.stringify({
   aiModelTranslation: 'stub', aiModelWriting: 'stub', aiModelReasoning: 'stub'
 }));
 
-const app = await electron.launch({ args: [repo, `--user-data-dir=${userData}`], cwd: repo });
+// ALLPAPER_APP=/path/to/AllPaper.app/Contents/MacOS/AllPaper runs the same checks against a packaged build.
+const packaged = process.env.ALLPAPER_APP;
+const app = await electron.launch(packaged
+  ? { executablePath: packaged, args: [`--user-data-dir=${userData}`] }
+  : { args: [repo, `--user-data-dir=${userData}`], cwd: repo });
 const page = await app.firstWindow();
 const problems = [];
 page.on('pageerror', (e) => problems.push(String(e)));

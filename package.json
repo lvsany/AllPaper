@@ -21,7 +21,8 @@
     "appId": "com.allpaper.desktop",
     "productName": "AllPaper",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
       "dist/**/*",
@@ -33,7 +34,8 @@
         "dmg"
       ],
       "category": "public.app-category.productivity",
-      "identity": null
+      "identity": null,
+      "icon": "build/icon.icns"
     }
   },
   "dependencies": {
