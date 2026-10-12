@@ -42,14 +42,6 @@ export const daysBetween = (from: string, to: string): number =>
 
 export const weekdayOf = (key: string): string => WEEKDAYS[parseDateKey(key).getDay()];
 
-/** 42 date keys (6 weeks, Monday first) covering the given month (`month` is 0-11). */
-export function monthGrid(year: number, month: number): string[] {
-  const first = new Date(year, month, 1);
-  const offset = (first.getDay() + 6) % 7;
-  const start = new Date(year, month, 1 - offset);
-  return Array.from({ length: 42 }, (_, i) => toDateKey(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i)));
-}
-
 export function compareEvents(a: ScheduleEvent, b: ScheduleEvent): number {
   if (a.date !== b.date) return a.date < b.date ? -1 : 1;
   const ta = a.time ?? '';
@@ -78,18 +70,21 @@ export function relativeLabel(key: string, today: string): string {
 }
 
 export interface Agenda {
+  /** Unfinished events before today. */
   overdue: ScheduleEvent[];
+  /** Unfinished events from today on, grouped by date. */
   groups: Array<{ date: string; events: ScheduleEvent[] }>;
+  /** Finished events, most recent first. */
+  done: ScheduleEvent[];
 }
 
-/** Unfinished events before today, then events from today through `days` days ahead, grouped by date. */
-export function agenda(events: ScheduleEvent[], today: string, days: number, includeDone = false): Agenda {
-  const end = addDays(today, days);
+export function agenda(events: ScheduleEvent[], today: string): Agenda {
   const sorted = [...events].sort(compareEvents);
-  const overdue = sorted.filter((e) => !e.done && e.date < today);
-  const groups = [...eventsByDate(sorted.filter((e) => e.date >= today && e.date <= end && (includeDone || !e.done)))]
-    .map(([date, list]) => ({ date, events: list }));
-  return { overdue, groups };
+  return {
+    overdue: sorted.filter((e) => !e.done && e.date < today),
+    groups: [...eventsByDate(sorted.filter((e) => !e.done && e.date >= today))].map(([date, list]) => ({ date, events: list })),
+    done: sorted.filter((e) => e.done).reverse()
+  };
 }
 
 export function isOverdue(event: ScheduleEvent, today: string): boolean {

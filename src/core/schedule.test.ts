@@ -1,17 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, agenda, daysBetween, eventsByDate, monthGrid, relativeLabel, sanitizeEvents, toDateKey, type ScheduleEvent } from './schedule';
+import { addDays, agenda, daysBetween, eventsByDate, relativeLabel, sanitizeEvents, toDateKey, type ScheduleEvent } from './schedule';
 
 const ev = (id: string, date: string, extra: Partial<ScheduleEvent> = {}): ScheduleEvent => ({ id, title: id, date, kind: 'other', done: false, ...extra });
 
 describe('schedule helpers', () => {
-  it('builds a Monday-first six week grid around the month', () => {
-    const grid = monthGrid(2026, 9); // October 2026 starts on a Thursday
-    expect(grid).toHaveLength(42);
-    expect(grid[0]).toBe('2026-09-28');
-    expect(grid[3]).toBe('2026-10-01');
-    expect(grid[41]).toBe('2026-11-08');
-  });
-
   it('does date arithmetic on local calendar days', () => {
     expect(addDays('2026-10-31', 1)).toBe('2026-11-01');
     expect(addDays('2026-03-01', -1)).toBe('2026-02-28');
@@ -26,11 +18,12 @@ describe('schedule helpers', () => {
     expect(map.get('2026-10-11')!.map((e) => e.id)).toEqual(['c', 'a', 'b']);
   });
 
-  it('separates overdue items from the upcoming agenda', () => {
+  it('separates overdue, upcoming and finished events', () => {
     const events = [ev('late', '2026-10-01'), ev('lateDone', '2026-10-02', { done: true }), ev('today', '2026-10-11'), ev('soon', '2026-10-15'), ev('far', '2027-01-01')];
-    const result = agenda(events, '2026-10-11', 14);
+    const result = agenda(events, '2026-10-11');
     expect(result.overdue.map((e) => e.id)).toEqual(['late']);
-    expect(result.groups.map((g) => g.date)).toEqual(['2026-10-11', '2026-10-15']);
+    expect(result.groups.map((g) => g.date)).toEqual(['2026-10-11', '2026-10-15', '2027-01-01']);
+    expect(result.done.map((e) => e.id)).toEqual(['lateDone']);
   });
 
   it('discards malformed entries when loading a file', () => {

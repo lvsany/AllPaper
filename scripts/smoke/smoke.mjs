@@ -103,15 +103,15 @@ try {
   step('note.md holds a Pandoc-style citation with an anchor');
   // schedule and memo: a secret value must never reach the library folder
   await page.locator('.nav-item', { hasText: '日程' }).click();
-  await page.locator('.day-add input').first().fill('投稿截止');
-  await page.locator('.day-add button[type=submit]').click();
-  await page.waitForSelector('.day-list .ev');
+  await page.locator('.plan-add input').first().fill('投稿截止');
+  await page.locator('.plan-add button[type=submit]').click();
+  await page.waitForSelector('.agenda .ev');
   await page.locator('.nav-item', { hasText: '备忘录' }).click();
-  await page.locator('.memo-new button').nth(1).click();
-  await page.getByRole('button', { name: '填写密钥' }).click();
-  await page.locator('.secret-row input').fill('sk-smoke-SECRET-98765');
-  await page.getByRole('button', { name: '保存', exact: true }).click();
-  await page.waitForSelector('.secret-row code');
+  await page.getByRole('button', { name: '添加一行' }).click();
+  await page.locator('.keys-table tbody tr input').first().fill('Anthropic');
+  await page.locator('.key-cell input[type=password]').fill('sk-smoke-SECRET-98765');
+  await page.locator('.key-cell input[type=password]').press('Enter');
+  await page.waitForSelector('.key-cell code');
   await page.waitForTimeout(800);
   const scan = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const file = join(dir, entry.name);

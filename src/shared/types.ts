@@ -97,18 +97,20 @@ export interface TranslateResult { translations: Record<string, string>; failed:
 export interface AiStatus { configured: boolean; provider: AiProviderKind; mock: boolean }
 export interface ImportResult { paper: Paper; warnings: string[]; }
 
-export interface MemoItem {
+/** One row of the keys table. Secret rows keep their value encrypted outside the library. */
+export interface MemoRow {
   id: string;
-  /** `text` is a plain memo; `secret` has a value (API key…) kept outside the library, encrypted. */
-  kind: 'text' | 'secret';
-  title: string;
-  content: string;
-  tags: string[];
+  name: string;
+  note: string;
+  secret: boolean;
+  /** Present for plain (non-secret) rows only. */
+  value?: string;
+  /** For secret rows: whether a value is stored. */
+  hasValue?: boolean;
   updatedAt: string;
-  hasSecret?: boolean;
 }
-/** `secret` undefined keeps the stored value; an empty string clears it. */
-export type MemoInput = Omit<MemoItem, 'updatedAt' | 'hasSecret'> & { secret?: string };
+/** `value` undefined keeps the stored secret; an empty string clears it. */
+export type MemoInput = { id: string; name: string; note: string; secret: boolean; value?: string };
 
 export interface DesktopApi {
   settings: {
@@ -164,8 +166,8 @@ export interface DesktopApi {
     save(events: import('../core/schedule').ScheduleEvent[]): Promise<import('../core/schedule').ScheduleEvent[]>;
   };
   memos: {
-    list(): Promise<MemoItem[]>;
-    save(input: MemoInput): Promise<MemoItem>;
+    list(): Promise<MemoRow[]>;
+    save(input: MemoInput): Promise<MemoRow>;
     remove(id: string): Promise<void>;
     reveal(id: string): Promise<string>;
     /** Copies the secret in the main process and clears the clipboard again after 30 s. */
