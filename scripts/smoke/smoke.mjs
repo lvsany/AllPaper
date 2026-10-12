@@ -106,11 +106,11 @@ try {
   assert.match(readFileSync(noteFile, 'utf8'), /\[@vaswani\d+\w*#[0-9a-f]{8}\]/);
   step('note.md holds a Pandoc-style citation with an anchor');
   // schedule and memo: a secret value must never reach the library folder
-  await page.locator('.tab-item', { hasText: '日程' }).click();
+  await page.locator('.nav-item', { hasText: '日程' }).click();
   await page.locator('.plan-add input').first().fill('投稿截止');
   await page.locator('.plan-add button[type=submit]').click();
   await page.waitForSelector('.agenda .ev');
-  await page.locator('.tab-item', { hasText: '备忘录' }).click();
+  await page.locator('.nav-item', { hasText: '备忘录' }).click();
   await page.getByRole('button', { name: '添加一行' }).click();
   await page.locator('.keys-table tbody tr input').first().fill('Anthropic');
   await page.locator('.key-cell input[type=password]').fill('sk-smoke-SECRET-98765');

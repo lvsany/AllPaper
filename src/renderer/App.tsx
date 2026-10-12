@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react';
-import { BookOpen, CalendarDays, Check, Database, FileText, FolderKanban, NotebookText, Plus, Settings as SettingsIcon, X } from 'lucide-react';
+import { BookOpen, CalendarDays, Check, Database, FileText, FolderKanban, NotebookText, Settings as SettingsIcon, X } from 'lucide-react';
 import type { LibraryStatus, Paper, Settings } from '../shared/types';
 import { defaultSettings } from '../shared/types';
 import { SettingsView } from './SettingsView';
@@ -11,10 +11,10 @@ import { MemoView } from './MemoView';
 import { appendToNote } from './notes/noteBus';
 import { costOf, formatMoney, formatTokens, isPriced, taskCost, totalUsage } from '../core/usage';
 import type { UsageSummary } from '../shared/types';
-import { activate, closeTab, closedScreens, initialTabs, openPaper, openScreen, parseTabs, removePaper, screenLabel, SCREENS, type Screen, type TabsState } from '../core/tabs';
+import { activate, activeRecent, activeScreen, closeRecent, initialTabs, openNote, openPaper, openScreen, parentScreen, parseTabs, SCREENS, type Recent, type Screen, type TabsState } from '../core/tabs';
 import { WorkspaceProvider, useWorkspace } from './workspace';
 
-const STORAGE_KEY = 'allpaper.tabs.v1';
+const STORAGE_KEY = 'allpaper.recents.v2';
 
 function loadTabs(): TabsState {
   try { return parseTabs(localStorage.getItem(STORAGE_KEY)) ?? initialTabs(); } catch { return initialTabs(); }
@@ -46,7 +46,6 @@ function Shell({ tabs, setTabs, status, settings, refresh }: { tabs: TabsState; 
   const ws = useWorkspace();
   const [commandOpen, setCommandOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [toast, setToast] = useState<string>();
 
   useEffect(() => {
@@ -56,59 +55,69 @@ function Shell({ tabs, setTabs, status, settings, refresh }: { tabs: TabsState; 
   }, []);
   useEffect(() => { if (!toast) return; const t = window.setTimeout(() => setToast(undefined), 2600); return () => window.clearTimeout(t); }, [toast]);
 
-  const go = (screen: Screen) => { setTabs((s) => openScreen(s, screen)); setMenuOpen(false); };
+  const project = ws.currentProject;
+  /** A fixed entry. "项目笔记" opens the current project's note, which then shows up under recent pages. */
+  const go = (screen: Screen) => {
+    if (screen === 'projects' && project) setTabs((s) => openNote(s, { id: project.id, name: project.name }));
+    else setTabs((s) => openScreen(s, screen));
+  };
   const open = (paper: Paper, anchor?: string) => setTabs((s) => openPaper(s, { id: paper.id, title: paper.title }, anchor));
-  const close = (id: string) => setTabs((s) => closeTab(s, id));
+  const close = (id: string) => setTabs((s) => closeRecent(s, id));
+  const activateRecent = (recent: Recent) => {
+    if (recent.kind === 'note') ws.selectProject(recent.projectId);
+    setTabs((s) => activate(s, recent.id));
+  };
 
-  const active = tabs.tabs.find((tab) => tab.id === tabs.activeId);
-  const activePaper = active?.kind === 'paper' ? ws.papers.find((p) => p.id === active.paperId) : undefined;
-  const onSettings = active?.kind === 'screen' && active.screen === 'settings';
+  const recent = activeRecent(tabs);
+  const screen = activeScreen(tabs);
+  const parent = parentScreen(recent);
+  const activePaper = recent?.kind === 'paper' ? ws.papers.find((p) => p.id === recent.paperId) : undefined;
 
-  // a paper that no longer exists (deleted, or the library was switched) should not linger as a page
+  // The note page follows the project picked inside it, and a project created from the empty page gets a recent entry.
   useEffect(() => {
-    if (active?.kind === 'paper' && ws.papersLoaded && !activePaper) setTabs((s) => removePaper(s, active.paperId));
-  }, [active, activePaper, ws.papersLoaded, setTabs]);
+    if (!project) return;
+    if (recent?.kind === 'note' && recent.projectId !== project.id) setTabs((s) => openNote(s, { id: project.id, name: project.name }));
+    else if (screen === 'projects') setTabs((s) => openNote(s, { id: project.id, name: project.name }));
+  }, [project, recent, screen, setTabs]);
 
-  const closed = closedScreens(tabs);
+  // pages whose paper or project no longer exists should not linger
+  useEffect(() => {
+    if (recent?.kind === 'paper' && ws.papersLoaded && !activePaper) setTabs((s) => closeRecent(s, recent.id));
+    if (recent?.kind === 'note' && ws.projects.length > 0 && !ws.projects.some((p) => p.id === recent.projectId)) setTabs((s) => closeRecent(s, recent.id));
+  }, [recent, activePaper, ws.papersLoaded, ws.projects, setTabs]);
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand"><span className="brand-mark">A</span><span>AllPaper</span></div>
-        <div className="tabs-head">
-          <span>最近浏览</span>
-          <div className="tabs-add">
-            <button title="打开页面" aria-label="打开页面" onClick={() => setMenuOpen((v) => !v)}><Plus size={15} /></button>
-            {menuOpen && (
-              <div className="tabs-menu" onMouseLeave={() => setMenuOpen(false)}>
-                {closed.length ? closed.map((screen) => {
-                  const Icon = SCREEN_ICON[screen];
-                  return <button key={screen} onClick={() => go(screen)}><Icon size={15} />{screenLabel(screen)}</button>;
-                }) : <p>主要页面都已打开</p>}
-              </div>
-            )}
-          </div>
-        </div>
-        <nav className="tabs-list">
-          {tabs.tabs.map((tab) => {
-            const Icon = tab.kind === 'screen' ? SCREEN_ICON[tab.screen] : FileText;
-            const label = tab.kind === 'screen' ? screenLabel(tab.screen) : tab.title;
+        <nav>
+          {SCREENS.map(({ id, label }) => {
+            const Icon = SCREEN_ICON[id];
+            const cls = screen === id ? 'nav-item active' : parent === id ? 'nav-item parent' : 'nav-item';
+            return <button key={id} className={cls} onClick={() => go(id)}><Icon size={18} />{label}</button>;
+          })}
+        </nav>
+        <div className="tabs-head"><span>最近浏览</span></div>
+        <div className="tabs-list">
+          {tabs.recents.map((item) => {
+            const Icon = item.kind === 'note' ? FolderKanban : FileText;
+            const label = item.kind === 'note' ? (ws.projects.find((p) => p.id === item.projectId)?.name ?? item.title) : item.title;
             return (
               <div
-                key={tab.id} className={`tab-item${tab.id === tabs.activeId ? ' active' : ''}${tab.kind === 'paper' ? ' paper' : ''}`}
-                title={label} role="button" tabIndex={0}
-                onClick={() => setTabs((s) => activate(s, tab.id))}
-                onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); close(tab.id); } }}
-                onKeyDown={(e) => { if (e.key === 'Enter') setTabs((s) => activate(s, tab.id)); }}
+                key={item.id} className={`tab-item${item.id === tabs.activeId ? ' active' : ''}`}
+                title={item.kind === 'note' ? `笔记：${label}` : label} role="button" tabIndex={0}
+                onClick={() => activateRecent(item)}
+                onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); close(item.id); } }}
+                onKeyDown={(e) => { if (e.key === 'Enter') activateRecent(item); }}
               >
-                <Icon size={tab.kind === 'screen' ? 17 : 15} />
+                <Icon size={15} />
                 <span>{label}</span>
-                <button className="tab-close" title="关闭" aria-label={`关闭 ${label}`} onClick={(e) => { e.stopPropagation(); close(tab.id); }}><X size={13} /></button>
+                <button className="tab-close" title="关闭" aria-label={`关闭 ${label}`} onClick={(e) => { e.stopPropagation(); close(item.id); }}><X size={13} /></button>
               </div>
             );
           })}
-          {!tabs.tabs.length && <p className="tabs-empty">没有打开的页面。点上面的 + 打开。</p>}
-        </nav>
+          {!tabs.recents.length && <p className="tabs-empty">打开过的论文和笔记会出现在这里。</p>}
+        </div>
         <div className="sidebar-foot">
           <button className="shortcut" onClick={() => setCommandOpen(true)}><span>搜索与命令</span><kbd>⌘ K</kbd></button>
           <button className="shortcut" onClick={() => setQuickOpen(true)}><span>快速记点子</span><kbd>⌘ ⇧ I</kbd></button>
@@ -119,40 +128,28 @@ function Shell({ tabs, setTabs, status, settings, refresh }: { tabs: TabsState; 
         </div>
       </aside>
       <main className="workspace">
-        {!status.configured && !onSettings
+        {!status.configured && screen !== 'settings'
           ? <Onboarding onConfigure={() => go('settings')} />
-          : !active
-            ? <EmptyPages closed={closed} onOpen={go} />
-            : active.kind === 'paper'
-              ? (activePaper
-                ? <ReaderView key={activePaper.id} paper={activePaper} anchor={active.anchor} onBack={() => go('library')} onOpenPaper={open} />
-                : <div className="rd-empty"><p>正在打开论文…</p></div>)
-              : active.screen === 'settings' ? <SettingsView settings={settings} status={status} onSaved={async () => { await refresh(); await ws.refreshAi(); await ws.refreshPapers(); await ws.refreshProjects(); }} />
-                : active.screen === 'projects' ? <ProjectView onOpenPaper={open} />
-                  : active.screen === 'schedule' ? <ScheduleView />
-                    : active.screen === 'memo' ? <MemoView />
-                      : <LibraryView onRead={(paper) => open(paper)} />}
+          : recent?.kind === 'paper'
+            ? (activePaper
+              ? <ReaderView key={activePaper.id} paper={activePaper} anchor={recent.anchor} onBack={() => go('library')} onOpenPaper={open} />
+              : <div className="rd-empty"><p>正在打开论文…</p></div>)
+            : recent?.kind === 'note' || screen === 'projects' ? <ProjectView onOpenPaper={open} />
+              : screen === 'settings' ? <SettingsView settings={settings} status={status} onSaved={async () => { await refresh(); await ws.refreshAi(); await ws.refreshPapers(); await ws.refreshProjects(); }} />
+                : screen === 'schedule' ? <ScheduleView />
+                  : screen === 'memo' ? <MemoView />
+                    : <LibraryView onRead={(paper) => open(paper)} />}
       </main>
       {commandOpen && (
         <CommandPanel
           close={() => setCommandOpen(false)}
-          onGo={(screen) => { go(screen); setCommandOpen(false); }}
+          onGo={(target) => { go(target); setCommandOpen(false); }}
           onOpenPaper={(paper) => { open(paper); setCommandOpen(false); }}
         />
       )}
       {quickOpen && <QuickIdea close={() => setQuickOpen(false)} onSaved={(name) => { setQuickOpen(false); setToast(`已记入「${name}」的笔记`); }} />}
       {toast && <div className="toast"><Check size={14} /> {toast}</div>}
     </div>
-  );
-}
-
-function EmptyPages({ closed, onOpen }: { closed: Screen[]; onOpen(screen: Screen): void }) {
-  return (
-    <section className="empty-workspace">
-      <h1>没有打开的页面</h1>
-      <p>从下面选一个，或按 ⌘K 搜索文献库。</p>
-      <div className="row">{closed.map((screen) => <button key={screen} className="secondary" onClick={() => onOpen(screen)}>{screenLabel(screen)}</button>)}</div>
-    </section>
   );
 }
 

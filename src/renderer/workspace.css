@@ -341,26 +341,18 @@ mark.hl-active { outline: 2px solid var(--accent); outline-offset: 1px; }
 .model-row { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr); gap: 8px; align-items: end; }
 .model-row label { margin-top: 0 !important; }
 
-/* recent pages in the sidebar */
-.tabs-head { display: flex; align-items: center; justify-content: space-between; padding: 0 9px 6px; font-size: 11.5px; color: #7f897c; letter-spacing: .04em; }
-.tabs-add { position: relative; }
-.tabs-add > button { border: 0; background: transparent; color: #aab2a6; width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; }
-.tabs-add > button:hover { background: #2e342e; color: #fff; }
-.tabs-menu { position: absolute; right: 0; top: 28px; z-index: 30; min-width: 150px; background: #2a302a; border: 1px solid #3a423a; border-radius: 9px; padding: 5px; box-shadow: 0 12px 30px #0006; }
-.tabs-menu button { display: flex; gap: 9px; align-items: center; width: 100%; border: 0; background: transparent; color: #d8ddd5; padding: 8px 9px; border-radius: 6px; font-size: 13px; text-align: left; }
-.tabs-menu button:hover { background: #38413a; }
-.tabs-menu p { margin: 0; padding: 8px 9px; color: #8e978b; font-size: 12px; }
+/* recent pages in the sidebar, under the fixed entries */
+.nav-item.parent { background: #2a302a; color: #e3e8df; }
+.tabs-head { margin-top: 18px; display: flex; align-items: center; justify-content: space-between; padding: 0 9px 6px; font-size: 11.5px; color: #7f897c; letter-spacing: .04em; }
 .tabs-list { display: grid; gap: 2px; align-content: start; overflow: auto; min-height: 0; flex: 1; padding-bottom: 8px; }
-.tab-item { display: flex; align-items: center; gap: 9px; padding: 8px 6px 8px 10px; border-radius: 8px; color: #b9beb7; font-size: 13.5px; cursor: pointer; min-width: 0; }
+.tab-item { display: flex; align-items: center; gap: 9px; padding: 7px 6px 7px 10px; border-radius: 8px; color: #b9beb7; font-size: 12.5px; cursor: pointer; min-width: 0; }
 .tab-item > svg { flex: none; }
 .tab-item > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab-item:hover { background: #2e342e; color: #fff; }
 .tab-item.active { background: #badc75; color: #1e2818; font-weight: 600; }
-.tab-item.paper { font-size: 12.5px; }
 .tab-close { flex: none; width: 20px; height: 20px; border: 0; border-radius: 5px; background: transparent; color: inherit; display: grid; place-items: center; opacity: 0; padding: 0; }
 .tab-item:hover .tab-close, .tab-item.active .tab-close, .tab-item:focus-within .tab-close { opacity: .7; }
 .tab-close:hover { opacity: 1 !important; background: #00000026; }
-.tabs-empty { margin: 8px 10px; font-size: 12px; color: #7f897c; line-height: 1.6; }
-.sidebar nav.tabs-list { display: grid; }
+.tabs-empty { margin: 4px 10px; font-size: 12px; color: #7f897c; line-height: 1.6; }
 .command-pages { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
 .command-pages .command-action { width: auto; margin-top: 0; padding: 7px 12px; }
