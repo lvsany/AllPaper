@@ -4,7 +4,7 @@
 
 ## 安装（发布版）
 
-从 `release/AllPaper-0.1.2-arm64.dmg` 安装。要求：**Apple Silicon（M1/M2/M3/M4）Mac，macOS 13+**；Intel Mac 和 Windows 不能用。
+从 `release/AllPaper-0.1.3-arm64.dmg` 安装。要求：**Apple Silicon（M1/M2/M3/M4）Mac，macOS 13+**；Intel Mac 和 Windows 不能用。
 
 1. 打开 DMG，把 AllPaper 拖进“应用程序”。
 2. 这个包没有经过 Apple 公证，第一次打开会被系统拦截，任选一种方式放行：
