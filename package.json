@@ -1,6 +1,6 @@
 {
   "name": "allpaper",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Local-first research workbench for reading, thinking and writing papers.",
   "main": "dist-electron/main.cjs",
