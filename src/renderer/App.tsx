@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
-import { BookOpen, Check, Database, FolderKanban, Search, Settings as SettingsIcon } from 'lucide-react';
+import { BookOpen, Check, Database, FolderKanban, Settings as SettingsIcon } from 'lucide-react';
 import type { LibraryStatus, Paper, Settings } from '../shared/types';
 import { defaultSettings } from '../shared/types';
 import { SettingsView } from './SettingsView';
 import { LibraryView } from './LibraryView';
-import { SearchView } from './SearchView';
 import { ReaderView } from './reader/ReaderView';
 import { ProjectView } from './ProjectView';
 import { appendToNote } from './notes/noteBus';
 import { WorkspaceProvider, useWorkspace } from './workspace';
 
-type Screen = 'library' | 'projects' | 'search' | 'settings';
+type Screen = 'library' | 'projects' | 'settings';
 interface Reading { paper: Paper; anchor?: string }
 
 export function App() {
@@ -49,7 +48,7 @@ function Shell({ screen, setScreen, status, settings, refresh }: { screen: Scree
   const go = (next: Screen) => { setInReader(false); setScreen(next); };
 
   const nav = [
-    ['library', BookOpen, '文献库'], ['projects', FolderKanban, '项目笔记'], ['search', Search, '搜索论文'], ['settings', SettingsIcon, '设置']
+    ['library', BookOpen, '文献库'], ['projects', FolderKanban, '项目笔记'], ['settings', SettingsIcon, '设置']
   ] as const;
 
   return (
@@ -77,10 +76,9 @@ function Shell({ screen, setScreen, status, settings, refresh }: { screen: Scree
             ? <ReaderView key={reading.paper.id} paper={reading.paper} anchor={reading.anchor} onBack={() => setInReader(false)} onOpenPaper={open} />
             : screen === 'settings' ? <SettingsView settings={settings} status={status} onSaved={async () => { await refresh(); await ws.refreshAi(); await ws.refreshPapers(); await ws.refreshProjects(); }} />
               : screen === 'projects' ? <ProjectView onOpenPaper={open} />
-                : screen === 'search' ? <SearchView onOpenPaper={open} />
-                  : <LibraryView onRead={(paper) => open(paper)} />}
+                : <LibraryView onRead={(paper) => open(paper)} />}
       </main>
-      {commandOpen && <CommandPanel close={() => setCommandOpen(false)} onSearch={() => { go('search'); setCommandOpen(false); }} onOpenPaper={(paper) => { open(paper); setCommandOpen(false); }} />}
+      {commandOpen && <CommandPanel close={() => setCommandOpen(false)} onSearch={() => { go('library'); setCommandOpen(false); }} onOpenPaper={(paper) => { open(paper); setCommandOpen(false); }} />}
       {quickOpen && <QuickIdea close={() => setQuickOpen(false)} onSaved={(name) => { setQuickOpen(false); setToast(`已记入「${name}」的笔记`); }} />}
       {toast && <div className="toast"><Check size={14} /> {toast}</div>}
     </div>
@@ -104,7 +102,7 @@ function CommandPanel({ close, onSearch, onOpenPaper }: { close(): void; onSearc
     <div className="overlay" role="dialog" aria-label="命令面板" onMouseDown={close}>
       <div className="command-panel" onMouseDown={(e) => e.stopPropagation()}>
         <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索文献库全文（标题、摘要、正文）…" />
-        <button className="command-action" onClick={onSearch}>去搜索在线论文</button>
+        <button className="command-action" onClick={onSearch}>去文献库搜索在线论文</button>
         {rows.map((row) => (
           <button key={row.id} className="command-result" onClick={async () => { const bundle = await window.allPaper.papers.get(row.id); if (bundle) onOpenPaper(bundle.paper); }}>
             <strong>{row.title}</strong><small dangerouslySetInnerHTML={{ __html: row.excerpt.replace(/<(?!\/?b>)[^>]*>/g, '') }} />

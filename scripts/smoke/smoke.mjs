@@ -51,10 +51,13 @@ page.on('pageerror', (e) => problems.push(String(e)));
 const step = (name) => console.log(`✓ ${name}`);
 
 try {
-  await page.waitForSelector('.add-link input');
-  await page.locator('.add-link input').fill('https://arxiv.org/abs/1706.03762');
-  await page.locator('.add-link button').click();
-  await page.waitForSelector('.paper-row', { timeout: 120_000 });
+  await page.waitForSelector('.lib-search input');
+  await page.locator('.lib-search input').fill('https://arxiv.org/abs/1706.03762');
+  await page.locator('.lib-search button[type=submit]').click();
+  await page.waitForSelector('.paper-row', { timeout: 120_000 }).catch(async (error) => {
+    const notice = await page.locator('.notice').allInnerTexts();
+    throw new Error(`import did not finish; notices: ${JSON.stringify(notice)}`, { cause: error });
+  });
   step('arXiv link imported');
 
   await page.locator('.paper-row').first().click();
