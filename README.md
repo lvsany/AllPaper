@@ -4,11 +4,18 @@
 
 ## 安装（发布版）
 
-从 `release/AllPaper-0.1.0-arm64.dmg`（Apple Silicon，macOS 13+）安装：打开 DMG，把 AllPaper 拖进“应用程序”。包未签名，首次打开请在访达中**右键 → 打开**；若仍被拦截，执行：
+从 `release/AllPaper-0.1.1-arm64.dmg` 安装。要求：**Apple Silicon（M1/M2/M3/M4）Mac，macOS 13+**；Intel Mac 和 Windows 不能用。
 
-```bash
-xattr -dr com.apple.quarantine /Applications/AllPaper.app
-```
+1. 打开 DMG，把 AllPaper 拖进“应用程序”。
+2. 这个包没有经过 Apple 公证，第一次打开会被系统拦截，任选一种方式放行：
+   - **macOS 15 及以上**：先双击打开一次（会弹出拦截提示，点“完成”），然后到 **系统设置 → 隐私与安全性**，下滑找到“已阻止使用 AllPaper”，点“仍要打开”。
+   - **macOS 13/14**：在“应用程序”里对 AllPaper **右键 → 打开 → 打开**。
+   - 或者在终端执行（任何版本都有效）：
+
+     ```bash
+     xattr -dr com.apple.quarantine /Applications/AllPaper.app
+     ```
+3. 首次启动选择一个资料库目录，API Key 可以稍后在设置里填。
 
 校验和见 `release/SHA256SUMS.txt`。版本说明见 [CHANGELOG.md](CHANGELOG.md)。
 
