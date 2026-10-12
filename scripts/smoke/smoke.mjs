@@ -101,6 +101,25 @@ try {
   const noteFile = join(library, 'projects', readdirSync(join(library, 'projects'))[0], 'note.md');
   assert.match(readFileSync(noteFile, 'utf8'), /\[@vaswani\d+\w*#[0-9a-f]{8}\]/);
   step('note.md holds a Pandoc-style citation with an anchor');
+  // schedule and memo: a secret value must never reach the library folder
+  await page.locator('.nav-item', { hasText: '日程' }).click();
+  await page.locator('.day-add input').first().fill('投稿截止');
+  await page.locator('.day-add button[type=submit]').click();
+  await page.waitForSelector('.day-list .ev');
+  await page.locator('.nav-item', { hasText: '备忘录' }).click();
+  await page.locator('.memo-new button').nth(1).click();
+  await page.getByRole('button', { name: '填写密钥' }).click();
+  await page.locator('.secret-row input').fill('sk-smoke-SECRET-98765');
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await page.waitForSelector('.secret-row code');
+  await page.waitForTimeout(800);
+  const scan = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const file = join(dir, entry.name);
+    return entry.isDirectory() ? scan(file) : readFileSync(file).includes('sk-smoke-SECRET-98765') ? [file] : [];
+  });
+  assert.deepEqual(scan(library), [], 'secret value must not be written into the library');
+  assert.ok(JSON.parse(readFileSync(join(library, 'schedule.json'), 'utf8')).events.length === 1);
+  step('schedule saved; secret memo kept out of the library');
   assert.deepEqual(problems, []);
   console.log('smoke test passed');
 } finally {

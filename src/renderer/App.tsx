@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useState } from 'react';
-import { BookOpen, Check, Database, FolderKanban, Settings as SettingsIcon } from 'lucide-react';
+import { BookOpen, CalendarDays, Check, Database, FolderKanban, NotebookText, Settings as SettingsIcon } from 'lucide-react';
 import type { LibraryStatus, Paper, Settings } from '../shared/types';
 import { defaultSettings } from '../shared/types';
 import { SettingsView } from './SettingsView';
 import { LibraryView } from './LibraryView';
 import { ReaderView } from './reader/ReaderView';
 import { ProjectView } from './ProjectView';
+import { ScheduleView } from './ScheduleView';
+import { MemoView } from './MemoView';
 import { appendToNote } from './notes/noteBus';
 import { WorkspaceProvider, useWorkspace } from './workspace';
 
-type Screen = 'library' | 'projects' | 'settings';
+type Screen = 'library' | 'projects' | 'schedule' | 'memo' | 'settings';
 interface Reading { paper: Paper; anchor?: string }
 
 export function App() {
@@ -48,7 +50,7 @@ function Shell({ screen, setScreen, status, settings, refresh }: { screen: Scree
   const go = (next: Screen) => { setInReader(false); setScreen(next); };
 
   const nav = [
-    ['library', BookOpen, '文献库'], ['projects', FolderKanban, '项目笔记'], ['settings', SettingsIcon, '设置']
+    ['library', BookOpen, '文献库'], ['projects', FolderKanban, '项目笔记'], ['schedule', CalendarDays, '日程'], ['memo', NotebookText, '备忘录'], ['settings', SettingsIcon, '设置']
   ] as const;
 
   return (
@@ -76,7 +78,9 @@ function Shell({ screen, setScreen, status, settings, refresh }: { screen: Scree
             ? <ReaderView key={reading.paper.id} paper={reading.paper} anchor={reading.anchor} onBack={() => setInReader(false)} onOpenPaper={open} />
             : screen === 'settings' ? <SettingsView settings={settings} status={status} onSaved={async () => { await refresh(); await ws.refreshAi(); await ws.refreshPapers(); await ws.refreshProjects(); }} />
               : screen === 'projects' ? <ProjectView onOpenPaper={open} />
-                : <LibraryView onRead={(paper) => open(paper)} />}
+                : screen === 'schedule' ? <ScheduleView />
+                  : screen === 'memo' ? <MemoView />
+                    : <LibraryView onRead={(paper) => open(paper)} />}
       </main>
       {commandOpen && <CommandPanel close={() => setCommandOpen(false)} onSearch={() => { go('library'); setCommandOpen(false); }} onOpenPaper={(paper) => { open(paper); setCommandOpen(false); }} />}
       {quickOpen && <QuickIdea close={() => setQuickOpen(false)} onSaved={(name) => { setQuickOpen(false); setToast(`已记入「${name}」的笔记`); }} />}

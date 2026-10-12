@@ -65,6 +65,17 @@ const api: DesktopApi = {
     translateText: (text) => invoke('ai:translate-text', text),
     translateWriting: (text, context) => invoke('ai:translate-writing', text, context)
   },
+  schedule: {
+    list: () => invoke('schedule:list'),
+    save: (events) => invoke('schedule:save', events)
+  },
+  memos: {
+    list: () => invoke('memos:list'),
+    save: (input) => invoke('memos:save', input),
+    remove: (id) => invoke('memos:remove', id),
+    reveal: (id) => invoke('memos:reveal', id),
+    copySecret: (id) => invoke('memos:copy-secret', id)
+  },
   usage: { get: () => invoke('usage:get') },
   events: {
     on: (channel, listener) => {

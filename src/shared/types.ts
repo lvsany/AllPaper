@@ -97,6 +97,19 @@ export interface TranslateResult { translations: Record<string, string>; failed:
 export interface AiStatus { configured: boolean; provider: AiProviderKind; mock: boolean }
 export interface ImportResult { paper: Paper; warnings: string[]; }
 
+export interface MemoItem {
+  id: string;
+  /** `text` is a plain memo; `secret` has a value (API key…) kept outside the library, encrypted. */
+  kind: 'text' | 'secret';
+  title: string;
+  content: string;
+  tags: string[];
+  updatedAt: string;
+  hasSecret?: boolean;
+}
+/** `secret` undefined keeps the stored value; an empty string clears it. */
+export type MemoInput = Omit<MemoItem, 'updatedAt' | 'hasSecret'> & { secret?: string };
+
 export interface DesktopApi {
   settings: {
     get(): Promise<Settings>;
@@ -145,6 +158,18 @@ export interface DesktopApi {
     ask(request: Omit<AssistantRequest, 'requestId'>, onDelta: (text: string) => void): { promise: Promise<string>; cancel(): void };
     translateText(text: string): Promise<string>;
     translateWriting(text: string, context?: { before?: string; after?: string; section?: string; neighbourEnglish?: string }): Promise<string>;
+  };
+  schedule: {
+    list(): Promise<import('../core/schedule').ScheduleEvent[]>;
+    save(events: import('../core/schedule').ScheduleEvent[]): Promise<import('../core/schedule').ScheduleEvent[]>;
+  };
+  memos: {
+    list(): Promise<MemoItem[]>;
+    save(input: MemoInput): Promise<MemoItem>;
+    remove(id: string): Promise<void>;
+    reveal(id: string): Promise<string>;
+    /** Copies the secret in the main process and clears the clipboard again after 30 s. */
+    copySecret(id: string): Promise<void>;
   };
   usage: { get(): Promise<UsageSummary> };
   events: { on(channel: 'shortcut:quick-idea' | 'shortcut:command', listener: () => void): () => void };

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, net, protocol, safeStorage, shell } from 'electron';
 import Database from 'better-sqlite3';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
@@ -10,6 +10,8 @@ import { ensureLibraryLayout } from '../src/main/library-layout';
 import { PaperStore } from '../src/main/paper-store';
 import { searchAll } from '../src/main/adapters';
 import { ProjectStore } from '../src/main/project-store';
+import { ScheduleStore } from '../src/main/schedule-store';
+import { MemoStore } from '../src/main/memo-store';
 import { citedPapers, draftToLatex } from '../src/core/latex';
 import { createProvider, MockProvider, AiError, type AiProvider, type Completion } from '../src/main/ai';
 import { runAssistant, searchQueries, translateText, translateWriting, type AssistantDeps } from '../src/main/assistant';
@@ -192,6 +194,19 @@ function papers(): PaperStore {
   }
   return paperStore.store;
 }
+function memos(): MemoStore {
+  if (!settings.libraryPath) throw new Error('请先选择资料库目录');
+  return new MemoStore(settings.libraryPath, join(app.getPath('userData'), 'secrets.json'), {
+    available: () => safeStorage.isEncryptionAvailable(),
+    encrypt: (value) => safeStorage.encryptString(value).toString('base64'),
+    decrypt: (encoded) => safeStorage.decryptString(Buffer.from(encoded, 'base64'))
+  });
+}
+function schedule(): ScheduleStore {
+  if (!settings.libraryPath) throw new Error('请先选择资料库目录');
+  return new ScheduleStore(settings.libraryPath);
+}
+
 function projects(): ProjectStore {
   if (!settings.libraryPath) throw new Error('请先选择资料库目录');
   return new ProjectStore(settings.libraryPath);
@@ -361,6 +376,19 @@ app.whenReady().then(async () => {
   ipcMain.handle('ai:cancel', (_e, requestId: string) => { askControllers.get(requestId)?.abort(); });
   ipcMain.handle('ai:translate-text', async (_e, text: string) => translateText(await assistantDeps(), text));
   ipcMain.handle('ai:translate-writing', async (_e, text: string, context) => translateWriting(await assistantDeps(), text, context));
+  ipcMain.handle('schedule:list', () => schedule().list());
+  ipcMain.handle('schedule:save', (_e, events) => schedule().save(events));
+  ipcMain.handle('memos:list', () => memos().list());
+  ipcMain.handle('memos:save', (_e, input) => memos().save(input));
+  ipcMain.handle('memos:remove', (_e, id: string) => memos().remove(id));
+  ipcMain.handle('memos:reveal', (_e, id: string) => memos().reveal(id));
+  ipcMain.handle('memos:copy-secret', async (_e, id: string) => {
+    const value = await memos().reveal(id);
+    await clipboard.writeText(value);
+    setTimeout(() => {
+      void (async () => { if (await clipboard.readText() === value) await clipboard.clear(); })();
+    }, 30_000);
+  });
   ipcMain.handle('usage:get', usage);
 
   createWindow();
