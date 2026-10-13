@@ -74,3 +74,30 @@ export function arxivRefOf(fields: { arxivId?: string; url?: string; doi?: strin
   const issued = fields.doi?.match(/10\.48550\/arxiv\.(.+)$/i);
   return issued ? parseArxivId(issued[1]) : undefined;
 }
+
+const metaValues = (html: string, name: string) =>
+  [...html.matchAll(new RegExp(`<meta name="${name}" content="([^"]*)"`, 'g'))].map((m) => decode(m[1]).replace(/\s+/g, ' ').trim());
+
+/**
+ * Metadata from an arxiv.org/abs page. Used when the export API is rate limited:
+ * the abs page carries the same title, authors, abstract and subjects.
+ */
+export function parseArxivAbsPage(html: string): ArxivMetadata | undefined {
+  const title = metaValues(html, 'citation_title')[0];
+  const ref = parseArxivId(metaValues(html, 'citation_arxiv_id')[0] ?? '');
+  if (!title || !ref) return undefined;
+  const authors = metaValues(html, 'citation_author').map((full) => {
+    const [family, given] = full.includes(',') ? full.split(',').map((part) => part.trim()) : [full.split(/\s+/).at(-1) ?? full, full.split(/\s+/).slice(0, -1).join(' ')];
+    return { family, given: given || undefined };
+  });
+  const subjects = html.match(/class="tablecell subjects">([\s\S]*?)<\/td>/)?.[1] ?? '';
+  const comment = html.match(/<td class="tablecell comments[^>]*>([\s\S]*?)<\/td>/)?.[1];
+  return {
+    id: ref.id, version: undefined, title, authors,
+    abstract: metaValues(html, 'citation_abstract')[0] ?? '',
+    year: Number((metaValues(html, 'citation_date')[0] ?? '').slice(0, 4)) || undefined,
+    categories: [...subjects.matchAll(/\(([a-z-]+(?:\.[A-Za-z-]+)?)\)/g)].map((m) => m[1]),
+    doi: metaValues(html, 'citation_doi')[0],
+    comment: comment ? decode(comment.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim()) : undefined
+  };
+}

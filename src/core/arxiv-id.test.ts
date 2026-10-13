@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractDoi, parseArxivAtom, parseArxivId } from './arxiv-id';
+import { extractDoi, parseArxivAbsPage, parseArxivAtom, parseArxivId } from './arxiv-id';
 
 describe('arXiv ids', () => {
   it('parses ids, versions and the usual links', () => {
@@ -26,5 +26,19 @@ describe('arXiv ids', () => {
     expect(meta.title).toBe("On LLMs' Internal Representation");
     expect(meta.abstract).toBe('We study & show.');
     expect(meta.authors).toEqual([{ given: 'Francisco', family: 'Ribeiro' }, { given: 'Sarah', family: 'Nadi' }]);
+  });
+
+  it('reads metadata from an abs page when the API is rate limited', () => {
+    const html = `<meta name="citation_title" content="On LLMs&#39; Internal Representation of Code Correctness" />
+<meta name="citation_author" content="Ribeiro, Francisco" /><meta name="citation_author" content="Nadi, Sarah" />
+<meta name="citation_date" content="2025/12/08" /><meta name="citation_arxiv_id" content="2512.07404" />
+<meta name="citation_abstract" content="Despite the effectiveness of LLMs, they often output incorrect code." />
+<td class="tablecell subjects"><span class="primary-subject">Software Engineering (cs.SE)</span>; Artificial Intelligence (cs.AI)</td>
+<td class="tablecell comments mathjax">Accepted for ICSE&#39;26</td>`;
+    const meta = parseArxivAbsPage(html)!;
+    expect(meta).toMatchObject({ id: '2512.07404', year: 2025, categories: ['cs.SE', 'cs.AI'], comment: "Accepted for ICSE'26" });
+    expect(meta.title).toBe("On LLMs' Internal Representation of Code Correctness");
+    expect(meta.authors).toEqual([{ family: 'Ribeiro', given: 'Francisco' }, { family: 'Nadi', given: 'Sarah' }]);
+    expect(parseArxivAbsPage('<html></html>')).toBeUndefined();
   });
 });

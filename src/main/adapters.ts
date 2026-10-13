@@ -1,5 +1,6 @@
 import { mergeSearchResults, type SearchPaper } from '../core/deduplicate';
 import { splitName } from '../core/arxiv-id';
+import { arxivApi } from './arxiv-api';
 
 export interface AcademicAdapter { name: string; search(query: string): Promise<SearchPaper[]> }
 
@@ -17,8 +18,9 @@ export class ArxivAdapter implements AcademicAdapter {
     const terms = query.split(/\s+/).map((t) => t.replace(/[^\p{L}\p{N}-]/gu, '')).filter((t) => t.length > 1);
     const run = async (joiner: 'AND' | 'OR') => {
       const expression = terms.map((t) => `all:${t}`).join(` ${joiner} `);
-      const xml = await get(`https://export.arxiv.org/api/query?search_query=${encodeURIComponent(expression)}&start=0&max_results=15&sortBy=relevance`, false) as string;
-      return this.parse(xml);
+      const reply = await arxivApi.get(`https://export.arxiv.org/api/query?search_query=${encodeURIComponent(expression)}&start=0&max_results=15&sortBy=relevance`);
+      if (!reply.ok) throw new Error(`${reply.status}`);
+      return this.parse(reply.text);
     };
     const strict = terms.length ? await run('AND') : [];
     return strict.length >= 5 || terms.length < 2 ? strict : [...strict, ...await run('OR')];
