@@ -5,7 +5,7 @@ export const SCREENS: ReadonlyArray<{ id: Screen; label: string }> = [
   { id: 'library', label: '文献库' },
   { id: 'projects', label: '项目笔记' },
   { id: 'schedule', label: '日程' },
-  { id: 'memo', label: '备忘录' },
+  { id: 'memo', label: 'Keys' },
   { id: 'settings', label: '设置' }
 ];
 

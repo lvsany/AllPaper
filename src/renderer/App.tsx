@@ -9,9 +9,9 @@ import { ProjectView } from './ProjectView';
 import { ScheduleView } from './ScheduleView';
 import { MemoView } from './MemoView';
 import { appendToNote } from './notes/noteBus';
-import { costOf, formatMoney, formatTokens, isPriced, taskCost, totalUsage } from '../core/usage';
+import { costParts, formatMoney, formatTokens, isPriced, taskCostParts, totalUsage } from '../core/usage';
 import type { UsageSummary } from '../shared/types';
-import { activate, activeRecent, activeScreen, closeRecent, initialTabs, openNote, openPaper, openScreen, parentScreen, parseTabs, SCREENS, type Recent, type Screen, type TabsState } from '../core/tabs';
+import { activate, activeRecent, activeScreen, closeRecent, initialTabs, openNote, openPaper, openScreen, parentScreen, parseTabs, screenLabel, SCREENS, type Recent, type Screen, type TabsState } from '../core/tabs';
 import { WorkspaceProvider, useWorkspace } from './workspace';
 
 const STORAGE_KEY = 'allpaper.recents.v2';
@@ -56,6 +56,8 @@ function Shell({ tabs, setTabs, status, settings, refresh }: { tabs: TabsState; 
   useEffect(() => { if (!toast) return; const t = window.setTimeout(() => setToast(undefined), 2600); return () => window.clearTimeout(t); }, [toast]);
 
   const project = ws.currentProject;
+  /** The keys page can be renamed in Settings. */
+  const nameOf = (screen: Screen) => screen === 'memo' ? (settings.keysPageName.trim() || 'Keys') : screenLabel(screen);
   /** A fixed entry. "项目笔记" opens the current project's note, which then shows up under recent pages. */
   const go = (screen: Screen) => {
     if (screen === 'projects' && project) setTabs((s) => openNote(s, { id: project.id, name: project.name }));
@@ -91,10 +93,10 @@ function Shell({ tabs, setTabs, status, settings, refresh }: { tabs: TabsState; 
       <aside className="sidebar">
         <div className="brand"><span className="brand-mark">A</span><span>AllPaper</span></div>
         <nav>
-          {SCREENS.map(({ id, label }) => {
+          {SCREENS.map(({ id }) => {
             const Icon = SCREEN_ICON[id];
             const cls = screen === id ? 'nav-item active' : parent === id ? 'nav-item parent' : 'nav-item';
-            return <button key={id} className={cls} onClick={() => go(id)}><Icon size={18} />{label}</button>;
+            return <button key={id} className={cls} onClick={() => go(id)}><Icon size={18} />{nameOf(id)}</button>;
           })}
         </nav>
         <div className="tabs-head"><span>最近浏览</span></div>
@@ -143,6 +145,7 @@ function Shell({ tabs, setTabs, status, settings, refresh }: { tabs: TabsState; 
       {commandOpen && (
         <CommandPanel
           close={() => setCommandOpen(false)}
+          nameOf={nameOf}
           onGo={(target) => { go(target); setCommandOpen(false); }}
           onOpenPaper={(paper) => { open(paper); setCommandOpen(false); }}
         />
@@ -166,22 +169,30 @@ function TokenUsage({ onOpen }: { onOpen(): void }) {
   const { currency, prices } = ws.settings;
   const priced = isPriced(prices);
   const total = totalUsage(usage.byTask);
-  const spend = costOf(usage.byTask, prices);
-  const lines = Object.entries(usage.byTask).map(([task, item]) => `${task}：${item.calls} 次 · 输入 ${formatTokens(item.inputTokens)} · 输出 ${formatTokens(item.outputTokens)}${priced ? ` · ${formatMoney(taskCost(task, item, prices), currency)}` : ''}`);
+  const parts = costParts(usage.byTask, prices);
+  const spend = parts.input + parts.output;
+  const money = (n: number) => formatMoney(n, currency);
+  const lines = Object.entries(usage.byTask).map(([task, item]) => {
+    const part = taskCostParts(task, item, prices);
+    return `${task}：${item.calls} 次 · 输入 ${formatTokens(item.inputTokens)}${priced ? `（${money(part.input)}）` : ''} · 输出 ${formatTokens(item.outputTokens)}${priced ? `（${money(part.output)}）` : ''}`;
+  });
   const title = [
-    `${usage.month} 月累计：输入 ${formatTokens(total.inputTokens)} · 输出 ${formatTokens(total.outputTokens)} · ${total.calls} 次调用`,
+    `${usage.month} 月累计：${total.calls} 次调用`,
+    `输入 ${formatTokens(total.inputTokens)} token${priced ? ` → ${money(parts.input)}` : ''}`,
+    `输出 ${formatTokens(total.outputTokens)} token${priced ? ` → ${money(parts.output)}` : ''}`,
+    '',
     ...lines,
-    priced ? '花费 = token 数 × 设置里各模型档位的单价，仅供参考，不含缓存折扣。' : '在设置里填入各模型的单价后显示花费估算。'
+    priced ? '花费 = 输入 token × 输入单价 + 输出 token × 输出单价，按各模型档位分别计算；仅供参考，不含缓存折扣。' : '在设置里填入各模型的单价后显示花费估算。'
   ].join('\n');
   return (
     <button className="token-usage" title={title} onClick={onOpen}>
       <span>本月 token</span><b>{formatTokens(total.inputTokens + total.outputTokens)}</b>
-      <span>本月花费</span><b className={priced ? '' : 'dim'}>{priced ? formatMoney(spend, currency) : '未设单价'}</b>
+      <span>本月花费</span><b className={priced ? '' : 'dim'}>{priced ? money(spend) : '未设单价'}</b>
     </button>
   );
 }
 
-function CommandPanel({ close, onGo, onOpenPaper }: { close(): void; onGo(screen: Screen): void; onOpenPaper(paper: Paper): void }) {
+function CommandPanel({ close, onGo, nameOf, onOpenPaper }: { close(): void; onGo(screen: Screen): void; nameOf(screen: Screen): string; onOpenPaper(paper: Paper): void }) {
   const [query, setQuery] = useState('');
   const [rows, setRows] = useState<Array<{ id: string; title: string; excerpt: string }>>([]);
   useEffect(() => {
@@ -198,7 +209,7 @@ function CommandPanel({ close, onGo, onOpenPaper }: { close(): void; onGo(screen
     <div className="overlay" role="dialog" aria-label="命令面板" onMouseDown={close}>
       <div className="command-panel" onMouseDown={(e) => e.stopPropagation()}>
         <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索文献库全文（标题、摘要、正文）…" />
-        {!query.trim() && <div className="command-pages">{SCREENS.map((screen) => <button key={screen.id} className="command-action" onClick={() => onGo(screen.id)}>{screen.label}</button>)}</div>}
+        {!query.trim() && <div className="command-pages">{SCREENS.map((screen) => <button key={screen.id} className="command-action" onClick={() => onGo(screen.id)}>{nameOf(screen.id)}</button>)}</div>}
         {query.trim() && <button className="command-action" onClick={() => onGo('library')}>在文献库中搜索“{query.trim()}”并在线检索</button>}
         {rows.map((row) => (
           <button key={row.id} className="command-result" onClick={async () => { const bundle = await window.allPaper.papers.get(row.id); if (bundle) onOpenPaper(bundle.paper); }}>

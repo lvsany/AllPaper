@@ -110,7 +110,7 @@ try {
   await page.locator('.plan-add input').first().fill('投稿截止');
   await page.locator('.plan-add button[type=submit]').click();
   await page.waitForSelector('.agenda .ev');
-  await page.locator('.nav-item', { hasText: '备忘录' }).click();
+  await page.locator('.nav-item', { hasText: 'Keys' }).click();
   await page.getByRole('button', { name: '添加一行' }).click();
   await page.locator('.keys-table tbody tr input').first().fill('Anthropic');
   await page.locator('.key-cell input[type=password]').fill('sk-smoke-SECRET-98765');

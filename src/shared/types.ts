@@ -13,6 +13,8 @@ export interface Settings {
   prices: import('../core/usage').Prices;
   monthlyBudget: number;
   glossary: string;
+  /** Name of the keys page in the sidebar. */
+  keysPageName: string;
   translationStyle: 'muted' | 'border' | 'background';
   translationDelayMs: number;
   /** Computed by the main process; never persisted. */
@@ -30,6 +32,7 @@ export const defaultSettings: Settings = {
   prices: { translate: { input: 0, output: 0 }, write: { input: 0, output: 0 }, reason: { input: 0, output: 0 } },
   monthlyBudget: 0,
   glossary: '',
+  keysPageName: 'Keys',
   translationStyle: 'border',
   translationDelayMs: 1500,
   apiKeyConfigured: false,
@@ -143,6 +146,9 @@ export interface DesktopApi {
     attachPdf(id: string): Promise<ImportResult | undefined>;
     onImportProgress(listener: (progress: ImportProgress) => void): () => void;
     importSearchRecord(record: import('../core/deduplicate').SearchPaper): Promise<ImportResult>;
+    create(input: { title: string; authors: Author[]; year?: number; venue?: string; doi?: string; arxivId?: string; url?: string; abstract?: string; tags?: string[] }): Promise<Paper>;
+    remove(id: string): Promise<void>;
+    citedBy(id: string): Promise<Array<{ projectId: string; project: string; where: 'note' | 'draft' }>>;
     update(id: string, patch: Partial<Paper>): Promise<Paper>;
     changeCitekey(id: string, citekey: string): Promise<Paper>;
     exportBibtex(ids?: string[]): Promise<string | undefined>;
@@ -159,6 +165,8 @@ export interface DesktopApi {
   projects: {
     list(): Promise<import('./projects').Project[]>;
     create(name: string): Promise<import('./projects').Project>;
+    rename(id: string, name: string): Promise<import('./projects').Project>;
+    remove(id: string): Promise<void>;
     note(id: string): Promise<string>;
     saveNote(id: string, markdown: string): Promise<void>;
     appendNote(id: string, markdown: string): Promise<void>;

@@ -99,3 +99,31 @@ describe('PaperStore annotations', () => {
     expect(await papers.annotations(paper.id)).toEqual([]);
   });
 });
+
+describe('PaperStore create and delete', () => {
+  it('creates an entry by hand, refuses duplicates, and deletes everything of a paper', async () => {
+    const papers = await store();
+    const made = await papers.createManual({ title: 'A hand-entered paper', authors: [{ family: 'Zhao', given: 'Qi' }], year: 2023, venue: 'TSE', tags: ['x'] });
+    expect(made).toMatchObject({ citekey: 'zhao2023hand', contentSource: 'none', venue: 'TSE' });
+    await expect(papers.createManual({ title: 'a hand-entered paper', authors: [] })).rejects.toThrow('已经有');
+    await expect(papers.createManual({ title: '  ', authors: [] })).rejects.toThrow('标题');
+
+    await mkdir(join(root, 'projects', 'p1'), { recursive: true });
+    await writeFile(join(root, 'projects', 'p1', 'project.json'), JSON.stringify({ id: 'p1', name: '群智软件工程' }));
+    await writeFile(join(root, 'projects', 'p1', 'note.md'), `看 [@${made.citekey}#a1b2] 的结论\n`);
+    expect(await papers.citedBy(made.id)).toEqual([{ projectId: 'p1', project: '群智软件工程', where: 'note' }]);
+    expect(await papers.citedBy(paper.id)).toEqual([]);
+
+    await papers.remove(made.id);
+    expect((await papers.list()).map((p) => p.id)).not.toContain(made.id);
+    expect(await papers.get(made.id)).toBeUndefined();
+    await expect(papers.update(made.id, { title: 'x' })).rejects.toThrow();
+  });
+
+  it('edits metadata but never lets the title go empty', async () => {
+    const papers = await store();
+    const updated = await papers.update(paper.id, { year: 2021, venue: 'ICSE', authors: [{ family: 'New', given: 'Author' }], readStatus: 'read' });
+    expect(updated).toMatchObject({ year: 2021, venue: 'ICSE', readStatus: 'read', citekey: paper.citekey });
+    await expect(papers.update(paper.id, { title: '' })).rejects.toThrow('标题');
+  });
+});

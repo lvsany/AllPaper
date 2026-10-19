@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { costOf, EMPTY_PRICES, formatMoney, formatTokens, isPriced, totalUsage } from './usage';
+import { costOf, costParts, EMPTY_PRICES, formatMoney, formatTokens, isPriced, totalUsage } from './usage';
 
 describe('token usage', () => {
   it('formats counts compactly', () => {
@@ -25,5 +25,11 @@ describe('token usage', () => {
     expect(costOf(byTask, prices)).toBeCloseTo(3.5 + 0.75 + 3, 6);
     expect(isPriced(EMPTY_PRICES)).toBe(false);
     expect(isPriced(prices)).toBe(true);
+  });
+  it('prices input and output tokens separately', () => {
+    const byTask = { '论文问答': { calls: 1, inputTokens: 2_000_000, outputTokens: 100_000, estimatedCost: 0 } };
+    const prices = { translate: EMPTY_PRICES.translate, write: { input: 3, output: 15 }, reason: EMPTY_PRICES.reason };
+    expect(costParts(byTask, prices)).toEqual({ input: 6, output: 1.5 });
+    expect(costOf(byTask, prices)).toBeCloseTo(7.5, 9);
   });
 });

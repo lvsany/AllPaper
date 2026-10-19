@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Check, ChevronRight, Download, ExternalLink, FileText, FileUp, LibraryBig, Link2, LoaderCircle, Pencil, Search, Star, Upload } from 'lucide-react';
+import { BookOpen, Check, ChevronRight, Download, ExternalLink, FilePlus2, FileText, FileUp, LibraryBig, Link2, LoaderCircle, Pencil, Search, Star, Trash2, Upload } from 'lucide-react';
 import { parseArxivId } from '../core/arxiv-id';
 import type { SearchPaper } from '../core/deduplicate';
 import type { ImportResult, Paper } from '../shared/types';
+import { PaperForm, READ_STATUS, type PaperFormValues } from './PaperForm';
 import { useWorkspace } from './workspace';
 
 const cleanError = (error: unknown, fallback: string) =>
@@ -21,6 +22,9 @@ export function LibraryView({ onRead }: { onRead(paper: Paper): void }) {
   const [searching, setSearching] = useState(false);
   const [online, setOnline] = useState<Online>();
   const [importing, setImporting] = useState<string>();
+  const [creating, setCreating] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [sort, setSort] = useState<'added' | 'title' | 'year'>('added');
 
   const load = async () => { setPapers(await window.allPaper.papers.list()); await ws.refreshPapers(); };
   useEffect(() => { void load(); }, []);
@@ -33,9 +37,12 @@ export function LibraryView({ onRead }: { onRead(paper: Paper): void }) {
   const arxiv = useMemo(() => parseArxivId(query), [query]);
   const local = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q || arxiv) return papers;
-    return papers.filter((paper) => `${paper.title} ${paper.citekey} ${paper.authors.map((a) => a.family).join(' ')} ${paper.tags.join(' ')} ${paper.year ?? ''}`.toLowerCase().includes(q));
-  }, [papers, query, arxiv]);
+    let list = !q || arxiv ? papers : papers.filter((paper) => `${paper.title} ${paper.citekey} ${paper.authors.map((a) => a.family).join(' ')} ${paper.tags.join(' ')} ${paper.year ?? ''} ${paper.venue ?? ''}`.toLowerCase().includes(q));
+    if (statusFilter !== 'all') list = list.filter((paper) => paper.readStatus === statusFilter);
+    if (sort === 'title') list = [...list].sort((a, b) => a.title.localeCompare(b.title));
+    else if (sort === 'year') list = [...list].sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
+    return list;
+  }, [papers, query, arxiv, statusFilter, sort]);
 
   const afterImport = async (paper: Paper, warning?: string) => {
     setNotice(warning ?? `已入库《${paper.title}》`);
@@ -82,6 +89,14 @@ export function LibraryView({ onRead }: { onRead(paper: Paper): void }) {
       if (result) await afterImport(result.paper, result.warnings[0]);
     } catch (error) { setNotice(cleanError(error, '导入失败')); } finally { setBusy(''); }
   };
+  const createPaper = async (values: PaperFormValues) => {
+    const { readStatus, citekey: _c, ...input } = values;
+    const made = await window.allPaper.papers.create(input);
+    if (readStatus !== 'unread') await window.allPaper.papers.update(made.id, { readStatus });
+    setCreating(false);
+    await afterImport(made, `已新建《${made.title}》；这是一条只有元数据的记录，可以在右侧“获取全文”或选择本地 PDF。`);
+  };
+
   const summarize = (results: ImportResult[]) => {
     const count = (status: ImportResult['status']) => results.filter((r) => r.status === status).length;
     const parts = [`共 ${results.length} 条`, `${count('full-text')} 篇获得 HTML 全文`];
@@ -120,6 +135,7 @@ export function LibraryView({ onRead }: { onRead(paper: Paper): void }) {
         <div><div className="eyebrow">文献库 · {papers.length} 篇</div><h1>文献库与搜索</h1></div>
         <div className="toolbar">
           {missing > 0 && <button className="secondary" onClick={() => void fetchMissing()} disabled={Boolean(busy)} title="对没有正文的文献，按 arXiv / 开放获取来源尝试获取全文"><LibraryBig size={15} /> 补全全文 ({missing})</button>}
+          <button className="secondary" onClick={() => setCreating(true)}><FilePlus2 size={15} /> 新建条目</button>
           <button className="secondary" onClick={() => void importBibtex()} disabled={Boolean(busy)}><FileUp size={15} /> 导入 BibTeX</button>
           <button className="secondary" onClick={() => void window.allPaper.papers.exportBibtex()}><Download size={15} /> 导出 BibTeX</button>
           <button className="primary" onClick={() => void importPdf()} disabled={Boolean(busy)}>{busy ? <LoaderCircle size={15} className="spin" /> : <Upload size={15} />}{busy || '导入 PDF'}</button>
@@ -141,6 +157,15 @@ export function LibraryView({ onRead }: { onRead(paper: Paper): void }) {
 
       {busy && statusLine && <div className="notice"><LoaderCircle size={15} className="spin" />{busy}：{statusLine}</div>}
       {notice && <div className="notice"><Check size={15} />{notice}<button onClick={() => setNotice('')}>×</button></div>}
+
+      <div className="lib-filters">
+        {[{ id: 'all', label: '全部' }, ...READ_STATUS].map((item) => (
+          <button key={item.id} className={statusFilter === item.id ? 'on' : ''} onClick={() => setStatusFilter(item.id)}>
+            {item.label}{item.id === 'all' ? ` ${papers.length}` : ` ${papers.filter((p) => p.readStatus === item.id).length}`}
+          </button>
+        ))}
+        <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} title="排序"><option value="added">最近添加</option><option value="title">按标题</option><option value="year">按年份</option></select>
+      </div>
 
       <div className="library-content">
         <div className="paper-list">
@@ -204,16 +229,24 @@ export function LibraryView({ onRead }: { onRead(paper: Paper): void }) {
 
         <aside className="paper-inspector">
           {selected
-            ? <Inspector paper={selected} onChanged={async (paper) => { setSelected(paper); await load(); }} onRead={() => onRead(selected)} onBusy={(text) => { setBusy(text); if (!text) setStatusLine(''); }} onNotice={setNotice} />
+            ? <Inspector paper={selected} onChanged={async (paper) => { setSelected(paper); await load(); }} onDeleted={async () => { setSelected(undefined); setNotice('已删除'); await load(); }} onRead={() => onRead(selected)} onBusy={(text) => { setBusy(text); if (!text) setStatusLine(''); }} onNotice={setNotice} />
             : <div className="inspector-empty">选择一篇文献查看和编辑元数据</div>}
         </aside>
       </div>
+      {creating && (
+        <div className="overlay" role="dialog" aria-label="新建文献条目" onMouseDown={() => setCreating(false)}>
+          <div className="modal-card" onMouseDown={(e) => e.stopPropagation()}><PaperForm onSubmit={createPaper} onCancel={() => setCreating(false)} /></div>
+        </div>
+      )}
     </section>
   );
 }
 
-function Inspector({ paper, onChanged, onRead, onBusy, onNotice }: { paper: Paper; onChanged: (paper: Paper) => Promise<void>; onRead: () => void; onBusy: (text: string) => void; onNotice: (text: string) => void }) {
+function Inspector({ paper, onChanged, onDeleted, onRead, onBusy, onNotice }: { paper: Paper; onChanged: (paper: Paper) => Promise<void>; onDeleted: () => Promise<void>; onRead: () => void; onBusy: (text: string) => void; onNotice: (text: string) => void }) {
   const [working, setWorking] = useState(false);
+  const [edit, setEdit] = useState(false);
+  useEffect(() => { setEdit(false); }, [paper.id]);
+
   const run = async (label: string, action: () => Promise<ImportResult | undefined>) => {
     try {
       setWorking(true); onBusy(label);
@@ -224,8 +257,55 @@ function Inspector({ paper, onChanged, onRead, onBusy, onNotice }: { paper: Pape
       }
     } catch (error) { onNotice(cleanError(error, '获取失败')); } finally { setWorking(false); onBusy(''); }
   };
-  const [edit, setEdit] = useState(false); const [title, setTitle] = useState(paper.title); const [citekey, setCitekey] = useState(paper.citekey); const [tags, setTags] = useState(paper.tags.join(', ')); const [error, setError] = useState('');
-  useEffect(() => { setTitle(paper.title); setCitekey(paper.citekey); setTags(paper.tags.join(', ')); setEdit(false); }, [paper]);
-  const save = async () => { try { let next = paper; if (citekey !== paper.citekey) next = await window.allPaper.papers.changeCitekey(paper.id, citekey); next = await window.allPaper.papers.update(paper.id, { title, tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean) }); await onChanged(next); setEdit(false); } catch (reason) { setError(reason instanceof Error ? reason.message : '保存失败'); } };
-  return <>{edit ? <div className="metadata-form"><h2>编辑元数据</h2><label>标题<input value={title} onChange={(e) => setTitle(e.target.value)}/></label><label>引用键<input value={citekey} onChange={(e) => setCitekey(e.target.value)}/></label><label>标签（逗号分隔）<input value={tags} onChange={(e) => setTags(e.target.value)}/></label>{error && <p className="error-text">{error}</p>}<div className="row"><button className="secondary" onClick={() => setEdit(false)}>取消</button><button className="primary" onClick={() => void save()}>保存</button></div></div> : <div className="inspector"><div className="inspector-top"><span className="source-pill">{paper.contentSource === 'none' ? '缺全文' : `正文：${({'arxiv-html':'arXiv HTML',ar5iv:'ar5iv',pdf:'PDF 文字层'} as Record<string,string>)[paper.contentSource] ?? paper.contentSource}`}</span><button className="icon-button" title="编辑元数据" onClick={() => setEdit(true)}><Pencil size={15}/></button></div><h2>{paper.title}</h2><p className="authors">{paper.authors.map((author) => [author.given, author.family].filter(Boolean).join(' ')).join(', ')}</p><dl><dt>引用键</dt><dd><code>{paper.citekey}</code></dd><dt>状态</dt><dd>{paper.readStatus === 'unread' ? '未读' : paper.readStatus}</dd><dt>标签</dt><dd>{paper.tags.length ? paper.tags.map((tag) => <span className="tag" key={tag}>{tag}</span>) : '—'}</dd>{paper.abstract && <><dt>摘要</dt><dd className="abstract">{paper.abstract}</dd></>}</dl>{paper.contentSource!=='none'?<button className="primary full" onClick={onRead}>打开阅读视图</button>:<div className="no-text"><p className="muted-note">这篇只有元数据，还没有正文。</p><button className="primary full" disabled={working} onClick={() => void run('获取全文', () => window.allPaper.papers.fetchFullText(paper.id))}>{working ? <LoaderCircle size={15} className="spin" /> : <LibraryBig size={15} />} 获取全文</button><button className="secondary full" disabled={working} onClick={() => void run('导入 PDF', () => window.allPaper.papers.attachPdf(paper.id))}><FileText size={15} /> 选择本地 PDF…</button></div>}</div>}</>;
+
+  const save = async (values: PaperFormValues) => {
+    let next = paper;
+    if (values.citekey && values.citekey !== paper.citekey) next = await window.allPaper.papers.changeCitekey(paper.id, values.citekey);
+    const { citekey: _ignored, ...patch } = values;
+    next = await window.allPaper.papers.update(paper.id, patch);
+    await onChanged(next);
+    setEdit(false);
+  };
+
+  const remove = async () => {
+    const cited = await window.allPaper.papers.citedBy(paper.id).catch(() => []);
+    const where = cited.map((c) => `「${c.project}」的${c.where === 'note' ? '笔记' : '草稿'}`).join('、');
+    const message = `删除《${paper.title}》？\n\n它的正文、PDF、图片、译文和批注都会一起删除，且无法恢复。${cited.length ? `\n\n注意：${where}里引用了它，删除后这些引用会变成无法解析。` : ''}`;
+    if (!window.confirm(message)) return;
+    try { await window.allPaper.papers.remove(paper.id); await onDeleted(); } catch (error) { onNotice(cleanError(error, '删除失败')); }
+  };
+
+  if (edit) return <PaperForm initial={paper} onSubmit={save} onCancel={() => setEdit(false)} />;
+  const sourceLabel = ({ 'arxiv-html': 'arXiv HTML', ar5iv: 'ar5iv', pdf: 'PDF 文字层' } as Record<string, string>)[paper.contentSource] ?? paper.contentSource;
+  return (
+    <div className="inspector">
+      <div className="inspector-top">
+        <span className="source-pill">{paper.contentSource === 'none' ? '缺全文' : `正文：${sourceLabel}`}</span>
+        <span className="inspector-tools">
+          <button className="icon-button" title="编辑" onClick={() => setEdit(true)}><Pencil size={15} /></button>
+          <button className="icon-button danger" title="删除这篇文献" onClick={() => void remove()}><Trash2 size={15} /></button>
+        </span>
+      </div>
+      <h2>{paper.title}</h2>
+      <p className="authors">{paper.authors.map((author) => [author.given, author.family].filter(Boolean).join(' ')).join(', ')}</p>
+      <dl>
+        <dt>引用键</dt><dd><code>{paper.citekey}</code></dd>
+        <dt>出处</dt><dd>{[paper.venue, paper.year].filter(Boolean).join(' · ') || '—'}</dd>
+        {(paper.doi || paper.arxivId) && <><dt>标识</dt><dd>{paper.doi && <div>DOI {paper.doi}</div>}{paper.arxivId && <div>arXiv {paper.arxivId}</div>}</dd></>}
+        <dt>阅读状态</dt>
+        <dd><select className="status-select" value={paper.readStatus} onChange={(e) => void window.allPaper.papers.update(paper.id, { readStatus: e.target.value as Paper['readStatus'] }).then(onChanged)}>{READ_STATUS.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></dd>
+        <dt>标签</dt><dd>{paper.tags.length ? paper.tags.map((tag) => <span className="tag" key={tag}>{tag}</span>) : '—'}</dd>
+        {paper.abstract && <><dt>摘要</dt><dd className="abstract">{paper.abstract}</dd></>}
+      </dl>
+      {paper.contentSource !== 'none'
+        ? <button className="primary full" onClick={onRead}>打开阅读视图</button>
+        : (
+          <div className="no-text">
+            <p className="muted-note">这篇只有元数据，还没有正文。</p>
+            <button className="primary full" disabled={working} onClick={() => void run('获取全文', () => window.allPaper.papers.fetchFullText(paper.id))}>{working ? <LoaderCircle size={15} className="spin" /> : <LibraryBig size={15} />} 获取全文</button>
+            <button className="secondary full" disabled={working} onClick={() => void run('导入 PDF', () => window.allPaper.papers.attachPdf(paper.id))}><FileText size={15} /> 选择本地 PDF…</button>
+          </div>
+        )}
+    </div>
+  );
 }

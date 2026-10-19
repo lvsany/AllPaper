@@ -33,6 +33,9 @@ const api: DesktopApi = {
       return () => { ipcRenderer.removeListener('papers:import-progress', handler); };
     },
     importSearchRecord: (record) => invoke('papers:import-search-record', record),
+    create: (input) => invoke('papers:create', input),
+    remove: (id) => invoke('papers:remove', id),
+    citedBy: (id) => invoke('papers:cited-by', id),
     update: (id, patch) => invoke('papers:update', id, patch),
     changeCitekey: (id, citekey) => invoke('papers:change-citekey', id, citekey),
     exportBibtex: (ids) => invoke('papers:export-bibtex', ids),
@@ -53,6 +56,8 @@ const api: DesktopApi = {
   projects: {
     list: () => invoke('projects:list'),
     create: (name) => invoke('projects:create', name),
+    rename: (id, name) => invoke('projects:rename', id, name),
+    remove: (id) => invoke('projects:remove', id),
     note: (id) => invoke('projects:note', id),
     saveNote: (id, markdown) => invoke('projects:save-note', id, markdown),
     appendNote: (id, markdown) => invoke('projects:append-note', id, markdown),

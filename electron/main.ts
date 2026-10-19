@@ -325,6 +325,9 @@ app.whenReady().then(async () => {
     const result = await dialog.showOpenDialog({ title: '导入 BibTeX', filters: [{ name: 'BibTeX', extensions: ['bib'] }], properties: ['openFile'] });
     return result.canceled || !result.filePaths[0] ? undefined : papers().importBibtex(await readFile(result.filePaths[0], 'utf8'), (progress) => send('papers:import-progress', progress));
   });
+  ipcMain.handle('papers:create', (_e, input) => papers().createManual(input));
+  ipcMain.handle('papers:remove', (_e, id: string) => papers().remove(id));
+  ipcMain.handle('papers:cited-by', (_e, id: string) => papers().citedBy(id));
   ipcMain.handle('papers:update', (_e, id: string, patch) => papers().update(id, patch));
   ipcMain.handle('papers:change-citekey', (_e, id: string, citekey: string) => papers().changeCitekey(id, citekey));
   ipcMain.handle('papers:export-bibtex', async (_e, ids?: string[]) => {
@@ -350,6 +353,8 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('projects:list', () => projects().list());
   ipcMain.handle('projects:create', (_e, name: string) => projects().create(name));
+  ipcMain.handle('projects:rename', (_e, id: string, name: string) => projects().rename(id, name));
+  ipcMain.handle('projects:remove', (_e, id: string) => projects().remove(id));
   ipcMain.handle('projects:note', (_e, id: string) => projects().note(id));
   ipcMain.handle('projects:save-note', (_e, id: string, markdown: string) => projects().saveNote(id, markdown));
   ipcMain.handle('projects:append-note', async (_e, id: string, markdown: string) => { await projects().appendToNote(id, markdown); });

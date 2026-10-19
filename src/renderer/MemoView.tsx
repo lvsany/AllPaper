@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { Copy, Eye, EyeOff, Lock, LockOpen, Pencil, Plus, Trash2 } from 'lucide-react';
 import type { MemoRow } from '../shared/types';
+import { useWorkspace } from './workspace';
 
 const cleanError = (error: unknown) =>
   error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(error);
 
 /** A table of API keys (and any other name → value pairs). Locked rows are encrypted and kept out of the library. */
 export function MemoView() {
+  const { settings } = useWorkspace();
   const [rows, setRows] = useState<MemoRow[]>([]);
   const [error, setError] = useState('');
   const [newId, setNewId] = useState<string>();
@@ -35,8 +37,8 @@ export function MemoView() {
     <section className="keys">
       <header className="keys-head">
         <div>
-          <div className="eyebrow">备忘录</div>
-          <h1>API Key 与常用名称</h1>
+          <div className="eyebrow">{settings.keysPageName.trim() || 'Keys'}</div>
+          <h1>{settings.keysPageName.trim() || 'Keys'}</h1>
         </div>
         <button className="primary" onClick={() => void addRow()}><Plus size={15} /> 添加一行</button>
       </header>

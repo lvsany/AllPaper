@@ -1,4 +1,4 @@
-import { cp, mkdir, readFile, readdir, writeFile, stat } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rm, writeFile, stat } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { citekeyBase, nextCitekey, paperToBibtex, parseBibtex } from '../core/bibliography';
@@ -7,7 +7,7 @@ import { isDuplicate } from '../core/bib-resolve';
 import { parseLatexmlHtml, placeholdersIntact, TRANSLATABLE } from '../core/arxiv-html';
 import { hash } from '../core/draft';
 import { translationSystem, translationUser, type GlossaryEntry } from '../core/prompts';
-import type { Annotation, ImportProgress, ImportResult, Paper, PaperBundle, Paragraph } from '../shared/types';
+import type { Annotation, Author, ImportProgress, ImportResult, Paper, PaperBundle, Paragraph } from '../shared/types';
 import type { SearchPaper } from '../core/deduplicate';
 import { AiError, type AiProvider, type Completion } from './ai';
 import { fetchArxivPaper, findArxivByTitle, findOpenAccessPdf, type ArxivDocument } from './arxiv';
@@ -477,7 +477,57 @@ export class PaperStore {
     return { paper, warnings: ['已入库元数据；此来源没有可自动获取的全文，可稍后拖入 PDF。'] };
   }
 
+  /** A paper entered by hand (no file); full text can be added later. */
+  async createManual(input: { title: string; authors: Author[]; year?: number; venue?: string; doi?: string; arxivId?: string; url?: string; abstract?: string; tags?: string[] }): Promise<Paper> {
+    const title = input.title.trim();
+    if (!title) throw new Error('标题不能为空');
+    const existing = await this.list();
+    const candidate = { doi: input.doi?.trim() || undefined, arxivId: input.arxivId?.trim() || undefined, title };
+    if (existing.some((paper) => isDuplicate(candidate, paper))) throw new Error('文献库里已经有这篇论文了（DOI、arXiv 编号或标题相同）。');
+    const authors = input.authors.length ? input.authors : [{ family: 'Unknown' }];
+    const paper: Paper = {
+      id: randomUUID(), citekey: '', title, authors, year: input.year, venue: input.venue?.trim() || undefined, doi: candidate.doi, arxivId: candidate.arxivId,
+      abstract: input.abstract?.trim() || undefined, url: input.url?.trim() || undefined, arxivCategories: [], contentSource: 'none',
+      tags: input.tags ?? [], collections: [], projects: [], readStatus: 'unread', starred: false, addedAt: new Date().toISOString()
+    };
+    paper.citekey = nextCitekey(citekeyBase(paper.authors, paper.year, paper.title), existing.map((item) => item.citekey));
+    await this.register(paper, this.newDir(paper.citekey, paper.id), [], 'none');
+    await this.afterChange();
+    return paper;
+  }
+
+  /** Notes and drafts that cite this paper, so deleting it does not silently break them. */
+  async citedBy(id: string): Promise<Array<{ projectId: string; project: string; where: 'note' | 'draft' }>> {
+    const { citekey } = (await this.entry(id)).paper;
+    const pattern = new RegExp(`@${escapeRegExp(citekey)}(?=[#,\\]\\s}])`);
+    const hits: Array<{ projectId: string; project: string; where: 'note' | 'draft' }> = [];
+    const projectsDir = join(this.root, 'projects');
+    for (const entry of await readdir(projectsDir, { withFileTypes: true }).catch(() => [])) {
+      if (!entry.isDirectory()) continue;
+      const dir = join(projectsDir, entry.name);
+      const project = await readJson<{ name?: string } | undefined>(join(dir, 'project.json'), undefined);
+      const name = project?.name ?? entry.name;
+      const note = await readFile(join(dir, 'note.md'), 'utf8').catch(() => '');
+      if (pattern.test(note)) hits.push({ projectId: entry.name, project: name, where: 'note' });
+      const draft = await readFile(join(dir, 'drafts', 'paper-v1', 'draft.json'), 'utf8').catch(() => '');
+      if (pattern.test(draft) || draft.includes(`\\cite{${citekey}}`)) hits.push({ projectId: entry.name, project: name, where: 'draft' });
+    }
+    return hits;
+  }
+
+  /** Deletes the paper with everything stored for it: text, PDF, images, translations and annotations. */
+  async remove(id: string): Promise<void> {
+    const entry = await this.entry(id);
+    await rm(this.dirPath(entry), { recursive: true, force: true });
+    (await this.load()).delete(id);
+    this.bundles.delete(id);
+    this.translationCache.delete(id);
+    this.writeChains.delete(id);
+    await this.afterChange();
+  }
+
   async update(id: string, patch: Partial<Paper>): Promise<Paper> {
+    if (patch.title !== undefined && !patch.title.trim()) throw new Error('标题不能为空');
     const entry = await this.entry(id);
     const next = { ...entry.paper, ...patch, id: entry.paper.id, citekey: entry.paper.citekey, addedAt: entry.paper.addedAt };
     await writeFile(join(this.dirPath(entry), META), JSON.stringify(next, null, 2));

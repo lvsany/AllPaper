@@ -54,3 +54,19 @@ export function costOf(byTask: Record<string, TaskUsage>, prices: Prices): numbe
 
 export const taskCost = (task: string, item: TaskUsage, prices: Prices): number =>
   costOf({ [task]: item }, prices);
+
+/** Input and output are priced separately; this returns each part of a task's cost. */
+export function taskCostParts(task: string, item: TaskUsage, prices: Prices): { input: number; output: number } {
+  const price = prices[tierOfTask(task)] ?? EMPTY_PRICES.write;
+  return { input: (item.inputTokens * price.input) / 1_000_000, output: (item.outputTokens * price.output) / 1_000_000 };
+}
+
+export function costParts(byTask: Record<string, TaskUsage>, prices: Prices): { input: number; output: number } {
+  const total = { input: 0, output: 0 };
+  for (const [task, item] of Object.entries(byTask)) {
+    const part = taskCostParts(task, item, prices);
+    total.input += part.input;
+    total.output += part.output;
+  }
+  return total;
+}

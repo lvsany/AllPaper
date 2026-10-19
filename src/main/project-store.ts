@@ -1,7 +1,8 @@
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { slugify } from '../core/bibliography';
+import { notePreview } from '../core/note-preview';
 import type { DraftDocument, Project } from '../shared/projects';
 
 const readJson = async <T>(path: string, fallback: T): Promise<T> => {
@@ -19,10 +20,30 @@ export class ProjectStore {
     const projects: Project[] = [];
     for (const entry of await readdir(this.dir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
-      const project = await readJson<Project | undefined>(join(this.dir, entry.name, 'project.json'), undefined);
-      if (project?.id) projects.push({ id: project.id, name: project.name, createdAt: project.createdAt });
+      const dir = join(this.dir, entry.name);
+      const project = await readJson<Project | undefined>(join(dir, 'project.json'), undefined);
+      if (!project?.id) continue;
+      const note = join(dir, 'note.md');
+      const updatedAt = await stat(note).then((info) => info.mtime.toISOString(), () => project.createdAt);
+      const preview = notePreview(await readFile(note, 'utf8').catch(() => ''));
+      projects.push({ id: project.id, name: project.name, createdAt: project.createdAt, updatedAt, preview });
     }
     return projects.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async rename(id: string, name: string): Promise<Project> {
+    const project = await this.find(id);
+    const clean = name.trim();
+    if (!clean) throw new Error('标题不能为空');
+    const next = { id: project.id, name: clean, createdAt: project.createdAt };
+    await writeFile(join(this.path(project), 'project.json'), JSON.stringify(next, null, 2));
+    return { ...project, name: clean };
+  }
+
+  /** Deletes the project with its note and its paper draft. */
+  async remove(id: string): Promise<void> {
+    const project = await this.find(id);
+    await rm(this.path(project), { recursive: true, force: true });
   }
 
   async create(name: string): Promise<Project> {
@@ -31,7 +52,7 @@ export class ProjectStore {
     const dir = this.path(project);
     await mkdir(join(dir, 'drafts', 'paper-v1'), { recursive: true });
     await writeFile(join(dir, 'project.json'), JSON.stringify(project, null, 2));
-    await writeFile(join(dir, 'note.md'), `# ${clean}\n\n`);
+    await writeFile(join(dir, 'note.md'), '');
     return project;
   }
 
@@ -55,7 +76,7 @@ export class ProjectStore {
         if (idea?.oneLiner || idea?.title) ideas.push(`- ${idea.oneLiner || idea.title}`);
       }
     } catch { /* no legacy ideas */ }
-    const markdown = `# ${project.name}\n\n${ideas.length ? `## 点子\n\n${ideas.join('\n')}\n` : ''}`;
+    const markdown = ideas.length ? `## 点子\n\n${ideas.join('\n')}\n` : '';
     await writeFile(file, markdown);
     return markdown;
   }
