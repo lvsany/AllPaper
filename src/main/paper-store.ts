@@ -9,7 +9,7 @@ import { hash } from '../core/draft';
 import { translationSystem, translationUser, type GlossaryEntry } from '../core/prompts';
 import type { Annotation, Author, ImportProgress, ImportResult, Paper, PaperBundle, Paragraph } from '../shared/types';
 import type { SearchPaper } from '../core/deduplicate';
-import { AiError, type AiProvider, type Completion } from './ai';
+import { AiError, completeNonEmpty, outputBudget, type AiProvider, type Completion } from './ai';
 import { fetchArxivPaper, findArxivByTitle, findOpenAccessPdf, type ArxivDocument } from './arxiv';
 
 const META = 'meta.json';
@@ -154,12 +154,11 @@ export class PaperStore {
       const source = paragraph.masked ?? paragraph.text;
       const system = translationSystem(runtime.glossary);
       const ask = async (extra = ''): Promise<{ text: string; usage: Completion }> => {
-        const completion = await runtime.provider.complete({
+        const completion = await completeNonEmpty(runtime.provider, {
           model: runtime.model, system,
           messages: [{ role: 'user', content: translationUser(source, paragraph.sectionPath) + extra }],
-          maxTokens: Math.min(4000, Math.max(512, Math.ceil(source.length * 2) + 256))
-        });
-        this.deps.onUsage('阅读翻译', completion);
+          maxTokens: outputBudget(source.length, 2)
+        }, (c) => this.deps.onUsage('阅读翻译', c));
         return { text: cleanTranslation(completion.text), usage: completion };
       };
       let { text } = await ask();

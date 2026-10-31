@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Download, FileText, LockKeyhole, Plus, Redo2, RotateCw, Search, Sparkles, Trash2, Undo2, Unlock } from 'lucide-react';
-import { beginTranslation, failTranslation, hash, receiveTranslation, splitPastedText, unlock, type DraftBlock } from '../core/draft';
+import { beginTranslation, failTranslation, hash, needsTranslation, receiveTranslation, repairEmptyTranslations, splitPastedText, unlock, type DraftBlock } from '../core/draft';
 import { columnText, documentFrom, mergeInto, pasteInto, pasteSegments, setText, splitAt, textOf, type Side } from '../core/draft-edit';
 import { History } from '../core/history';
 import { citationsIn, type CitationRef } from '../core/note-markdown';
@@ -194,6 +194,7 @@ interface Focus { id: string; side: Side; caret: number | 'end' }
 interface Snapshot { blocks: DraftBlock[]; focus?: Focus }
 
 const newId = () => crypto.randomUUID().slice(0, 8);
+const MAX_PARALLEL_TRANSLATIONS = 3;
 const mod = (event: React.KeyboardEvent) => event.metaKey || event.ctrlKey;
 
 function Writing({ projectId }: { projectId: string }) {
@@ -214,7 +215,8 @@ function Writing({ projectId }: { projectId: string }) {
     void window.allPaper.projects.draft(projectId).then((loaded) => {
       if (!alive) return;
       // a document always has somewhere to type
-      const doc = loaded.blocks.length ? loaded : { ...loaded, blocks: [newBlock(0)] };
+      // a document always has somewhere to type; blocks saved with an empty English are waiting again
+      const doc = loaded.blocks.length ? { ...loaded, blocks: repairEmptyTranslations(loaded.blocks) } : { ...loaded, blocks: [newBlock(0)] };
       latest.current = doc;
       setDraft(doc);
     });
@@ -252,7 +254,7 @@ function Writing({ projectId }: { projectId: string }) {
   const update = useCallback((id: string, change: (block: DraftBlock) => DraftBlock) =>
     commit((doc) => ({ ...doc, blocks: doc.blocks.map((block) => block.id === id ? change(block) : block) })), [commit]);
 
-  const translate = useCallback(async (id: string) => {
+  const translateNow = useCallback(async (id: string) => {
     const doc = latest.current;
     const index = doc?.blocks.findIndex((b) => b.id === id) ?? -1;
     const block = doc?.blocks[index];
@@ -273,10 +275,25 @@ function Writing({ projectId }: { projectId: string }) {
     }
   }, [update]);
 
+  // At most a few requests at a time: pasting a long text must not fire hundreds of them at once.
+  const queue = useRef<string[]>([]);
+  const running = useRef(0);
+  const pump = useCallback(() => {
+    while (running.current < MAX_PARALLEL_TRANSLATIONS && queue.current.length) {
+      const id = queue.current.shift()!;
+      running.current += 1;
+      void translateNow(id).finally(() => { running.current -= 1; pump(); });
+    }
+  }, [translateNow]);
+  const translate = useCallback((id: string) => {
+    if (!queue.current.includes(id)) queue.current.push(id);
+    pump();
+  }, [pump]);
+
   const schedule = (id: string) => {
     window.clearTimeout(timers.current.get(id));
     if (!ai.configured) return;
-    timers.current.set(id, window.setTimeout(() => void translate(id), settings.translationDelayMs));
+    timers.current.set(id, window.setTimeout(() => translate(id), settings.translationDelayMs));
   };
   const scheduleChanged = (blocks: DraftBlock[]) => blocks.forEach((b) => { if (!b.locked && b.status === 'pending') schedule(b.id); });
 
@@ -344,7 +361,7 @@ function Writing({ projectId }: { projectId: string }) {
       if (event.key !== 'Shift' && event.key !== 'Meta' && event.key !== 'Control' && event.key !== 'Alt') setAllSelected(undefined);
     }
 
-    if (event.key === 'Enter' && mod(event) && side === 'zh') { event.preventDefault(); void translate(block.id); return; }
+    if (event.key === 'Enter' && mod(event) && side === 'zh') { event.preventDefault(); translate(block.id); return; }
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
       const [first, second] = splitAt(block, side, caret, newId());
@@ -402,7 +419,7 @@ function Writing({ projectId }: { projectId: string }) {
   const remove = (id: string) => edit((doc) => ({ ...doc, blocks: doc.blocks.length > 1 ? doc.blocks.filter((b) => b.id !== id) : [newBlock(0)] }));
 
   if (!draft) return <div className="rd-empty">加载中…</div>;
-  const waiting = draft.blocks.filter((b) => !b.locked && b.zhText.trim() && (b.status === 'pending' || b.status === 'failed'));
+  const waiting = draft.blocks.filter(needsTranslation);
   const activeBlock = draft.blocks.find((b) => b.id === activeId);
   const fieldRef = (side: Side, id: string) => (el: HTMLTextAreaElement | null) => { if (el) fields.current.set(`${side}:${id}`, el); else fields.current.delete(`${side}:${id}`); };
 
@@ -419,7 +436,7 @@ function Writing({ projectId }: { projectId: string }) {
           <button title="重做（⌘⇧Z / Ctrl+Y）" disabled={!history.current.canRedo} onClick={redo}><Redo2 size={14} /></button>
         </div>
         <button className="secondary tight" onClick={() => void window.allPaper.projects.exportLatex(projectId)}><Download size={14} /> 导出 LaTeX</button>
-        {!!waiting.length && ai.configured && <button className="secondary tight" onClick={() => waiting.forEach((b) => void translate(b.id))}><RotateCw size={14} /> 翻译 {waiting.length} 段待处理</button>}
+        {!!waiting.length && ai.configured && <button className="secondary tight" onClick={() => waiting.forEach((b) => translate(b.id))}><RotateCw size={14} /> 翻译 {waiting.length} 段待处理</button>}
         <span className="wbar-hint">中英两栏都像普通编辑器：Enter 新段落，粘贴多段自动分段，# 变标题；⌘/Ctrl+Z 撤销，⌘/Ctrl+A 连按两次全选整栏。停笔 {Math.round(settings.translationDelayMs / 100) / 10} 秒自动翻译，改英文会锁定该段。</span>
       </div>
       {!ai.configured && <div className="rd-banner">未配置模型服务，只能写中文；配置后点“翻译待处理段落”。<button className="text-button" onClick={openSettings}>前往设置</button></div>}
@@ -443,7 +460,7 @@ function Writing({ projectId }: { projectId: string }) {
                   />
                   {side === 'en' && (
                     <div className="wactions">
-                      {(block.locked || block.status === 'failed' || block.status === 'changed') && <button title={block.locked ? '解锁并重新翻译' : '重新翻译'} onClick={(e) => { e.stopPropagation(); if (block.locked) edit((doc) => ({ ...doc, blocks: doc.blocks.map((b) => b.id === block.id ? unlock(b) : b) })); if (ai.configured) void translate(block.id); }}>{block.locked ? <Unlock size={12} /> : <RotateCw size={12} />}</button>}
+                      {(block.locked || block.status === 'failed' || block.status === 'changed') && <button title={block.locked ? '解锁并重新翻译' : '重新翻译'} onClick={(e) => { e.stopPropagation(); if (block.locked) edit((doc) => ({ ...doc, blocks: doc.blocks.map((b) => b.id === block.id ? unlock(b) : b) })); if (ai.configured) translate(block.id); }}>{block.locked ? <Unlock size={12} /> : <RotateCw size={12} />}</button>}
                       <button title="删除这一段" onClick={(e) => { e.stopPropagation(); remove(block.id); }}><Trash2 size={12} /></button>
                     </div>
                   )}

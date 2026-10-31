@@ -1,6 +1,6 @@
 import { assistantSystem, parseGlossary, translationSystem, writingSystem, type WritingStyle } from '../core/prompts';
 import type { AssistantMode, AssistantRequest, PaperBundle } from '../shared/types';
-import { AiError, type AiProvider, type ChatMessage, type Completion } from './ai';
+import { AiError, completeNonEmpty, outputBudget, type AiProvider, type ChatMessage, type Completion } from './ai';
 
 export interface AssistantDeps {
   provider: AiProvider | undefined;
@@ -37,11 +37,10 @@ export async function runAssistant(deps: AssistantDeps, request: AssistantReques
 /** Translates arbitrary selected text (no placeholders involved). */
 export async function translateText(deps: AssistantDeps, text: string, onDelta?: (text: string) => void): Promise<string> {
   const provider = require(deps);
-  const completion = await provider.complete({
+  const completion = await completeNonEmpty(provider, {
     model: deps.models.translate, system: translationSystem(parseGlossary(deps.glossary)),
-    messages: [{ role: 'user', content: text }], maxTokens: Math.min(3000, text.length * 2 + 256), onDelta
-  });
-  deps.usage('划词翻译', completion);
+    messages: [{ role: 'user', content: text }], maxTokens: outputBudget(text.length, 2), onDelta
+  }, (c) => deps.usage('划词翻译', c));
   return completion.text.trim();
 }
 
@@ -56,11 +55,10 @@ export async function translateWriting(deps: AssistantDeps, text: string, contex
   if (context.neighbourEnglish) parts.push(`上一段已有的英文：${context.neighbourEnglish}`);
   if (context.after) parts.push(`下文（中文）：${context.after}`);
   parts.push(`请翻译这一段：\n${text}`);
-  const completion = await provider.complete({
+  const completion = await completeNonEmpty(provider, {
     model: deps.models.write, system: writingSystem(parseGlossary(deps.glossary), context.style),
-    messages: [{ role: 'user', content: parts.join('\n\n') }], maxTokens: Math.min(4000, text.length * 3 + 256)
-  });
-  deps.usage('双栏写作翻译', completion);
+    messages: [{ role: 'user', content: parts.join('\n\n') }], maxTokens: outputBudget(text.length, 3)
+  }, (c) => deps.usage('双栏写作翻译', c));
   return completion.text.trim();
 }
 

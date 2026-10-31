@@ -186,6 +186,25 @@ export class MockProvider implements AiProvider {
   }
 }
 
+/** Room for the answer: at least `floor` tokens, so models that think before answering are not cut off. */
+export const outputBudget = (sourceChars: number, perChar = 3, floor = 2048, cap = 8000) =>
+  Math.min(cap, Math.max(floor, Math.ceil(sourceChars * perChar) + 256));
+
+/**
+ * Some models (notably ones that think before answering) return an empty answer when the token budget runs
+ * out during the thinking part. An empty reply is never a translation: retry once with a much larger budget,
+ * and fail clearly if it is still empty. Every attempt is reported to `onUsage`, since each one is billed.
+ */
+export async function completeNonEmpty(provider: AiProvider, request: CompleteRequest, onUsage?: (completion: Completion) => void): Promise<Completion> {
+  const first = await provider.complete(request);
+  onUsage?.(first);
+  if (first.text.trim()) return first;
+  const second = await provider.complete({ ...request, maxTokens: Math.min(16_000, (request.maxTokens ?? 4096) * 4) });
+  onUsage?.(second);
+  if (second.text.trim()) return second;
+  throw new AiError('模型没有返回内容（两次都是空回复）。如果用的是会“先思考再回答”的模型，它可能把输出额度都用在了思考上；可以换一个不带思考的模型。', 'server');
+}
+
 export function createProvider(config: ProviderConfig): AiProvider | undefined {
   if (config.provider === 'mock') return new MockProvider();
   if (config.provider === 'anthropic') return config.apiKey ? new AnthropicProvider(config.apiKey, config.baseUrl) : undefined;

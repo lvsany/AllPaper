@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { AiError, AnthropicProvider, OpenAiCompatibleProvider, createProvider } from './ai';
+import { AiError, AnthropicProvider, OpenAiCompatibleProvider, completeNonEmpty, createProvider, outputBudget, type AiProvider, type CompleteRequest } from './ai';
 
 let server: Server;
 let base: string;
@@ -91,5 +91,33 @@ describe('model providers', () => {
   it('is not configured without a key', () => {
     expect(createProvider({ provider: 'anthropic' })).toBeUndefined();
     expect(createProvider({ provider: 'openai-compatible', baseUrl: 'http://localhost:11434/v1' })).toBeDefined();
+  });
+});
+
+describe('empty replies', () => {
+  const scripted = (replies: string[]) => {
+    const budgets: Array<number | undefined> = [];
+    const provider: AiProvider = { name: 'scripted', complete: async (request: CompleteRequest) => { budgets.push(request.maxTokens); return { text: replies.shift() ?? '', inputTokens: 1, outputTokens: 1 }; } };
+    return { provider, budgets };
+  };
+
+  it('retries an empty reply with a larger budget and reports both attempts', async () => {
+    const { provider, budgets } = scripted(['  ', 'Hello.']);
+    const usage: number[] = [];
+    const result = await completeNonEmpty(provider, { model: 'm', messages: [{ role: 'user', content: '你好' }], maxTokens: 2048 }, () => usage.push(1));
+    expect(result.text).toBe('Hello.');
+    expect(budgets).toEqual([2048, 8192]);
+    expect(usage).toHaveLength(2);
+  });
+
+  it('fails instead of treating an empty reply as a translation', async () => {
+    const { provider } = scripted(['', '']);
+    await expect(completeNonEmpty(provider, { model: 'm', messages: [{ role: 'user', content: 'x' }] })).rejects.toBeInstanceOf(AiError);
+  });
+
+  it('gives short texts enough room to answer', () => {
+    expect(outputBudget(1)).toBe(2048);
+    expect(outputBudget(1000, 3)).toBe(3256);
+    expect(outputBudget(100_000)).toBe(8000);
   });
 });
