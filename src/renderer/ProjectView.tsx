@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Download, FileText, LockKeyhole, Plus, RotateCw, Search, Sparkles, Trash2, Unlock } from 'lucide-react';
-import {
-  applyMarkdownShortcut, pasteParagraphs, splitPastedText, beginTranslation, editEnglish, failTranslation, hash, mergeBlocks, receiveTranslation, splitBlock, unlock, updateChinese,
-  type DraftBlock
-} from '../core/draft';
+import { Download, FileText, LockKeyhole, Plus, Redo2, RotateCw, Search, Sparkles, Trash2, Undo2, Unlock } from 'lucide-react';
+import { beginTranslation, failTranslation, hash, receiveTranslation, splitPastedText, unlock, type DraftBlock } from '../core/draft';
+import { columnText, documentFrom, mergeInto, pasteInto, pasteSegments, setText, splitAt, textOf, type Side } from '../core/draft-edit';
+import { History } from '../core/history';
 import { citationsIn, type CitationRef } from '../core/note-markdown';
 import { relativeTime } from '../core/note-preview';
 import type { DraftDocument, Project } from '../shared/projects';
@@ -191,6 +190,12 @@ function AutoText({ value, onChange, onKeyDown, onFocus, onPaste, placeholder, s
   );
 }
 
+interface Focus { id: string; side: Side; caret: number | 'end' }
+interface Snapshot { blocks: DraftBlock[]; focus?: Focus }
+
+const newId = () => crypto.randomUUID().slice(0, 8);
+const mod = (event: React.KeyboardEvent) => event.metaKey || event.ctrlKey;
+
 function Writing({ projectId }: { projectId: string }) {
   const { ai, settings, openSettings } = useWorkspace();
   const [draft, setDraft] = useState<DraftDocument>();
@@ -198,8 +203,10 @@ function Writing({ projectId }: { projectId: string }) {
   const timers = useRef(new Map<string, number>());
   const saveTimer = useRef<number | undefined>(undefined);
   const fields = useRef(new Map<string, HTMLTextAreaElement>());
-  const pendingFocus = useRef<{ id: string; side: 'zh' | 'en'; caret: number | 'end' } | undefined>(undefined);
+  const pendingFocus = useRef<Focus | undefined>(undefined);
+  const history = useRef(new History<Snapshot>());
   const [activeId, setActiveId] = useState<string>();
+  const [allSelected, setAllSelected] = useState<Side>();
   const [message, setMessage] = useState<string>();
 
   useEffect(() => {
@@ -214,6 +221,7 @@ function Writing({ projectId }: { projectId: string }) {
     return () => { alive = false; timers.current.forEach((t) => window.clearTimeout(t)); timers.current.clear(); };
   }, [projectId]);
 
+  /** Replaces the blocks and saves shortly after. Not an undo step by itself; see `edit`. */
   const commit = useCallback((change: (doc: DraftDocument) => DraftDocument) => {
     if (!latest.current) return;
     const next = change(latest.current);
@@ -224,6 +232,23 @@ function Writing({ projectId }: { projectId: string }) {
     saveTimer.current = window.setTimeout(() => void window.allPaper.projects.saveDraft(projectId, next), 500);
   }, [projectId]);
 
+  /** Where the caret is now, so undo can put it back. */
+  const currentFocus = (): Focus | undefined => {
+    const el = document.activeElement as HTMLTextAreaElement | null;
+    for (const [key, field] of fields.current) {
+      if (field === el) { const [side, id] = key.split(':') as [Side, string]; return { id, side, caret: el.selectionStart }; }
+    }
+    return undefined;
+  };
+
+  /** A user edit: recorded for undo (typing in one place groups into one step), then applied. */
+  const edit = useCallback((change: (doc: DraftDocument) => DraftDocument, key?: string) => {
+    if (!latest.current) return;
+    history.current.record({ blocks: latest.current.blocks, focus: currentFocus() }, key);
+    commit(change);
+  }, [commit]);
+
+  /** Machine updates (translation status and results) are not undo steps. */
   const update = useCallback((id: string, change: (block: DraftBlock) => DraftBlock) =>
     commit((doc) => ({ ...doc, blocks: doc.blocks.map((block) => block.id === id ? change(block) : block) })), [commit]);
 
@@ -253,6 +278,7 @@ function Writing({ projectId }: { projectId: string }) {
     if (!ai.configured) return;
     timers.current.set(id, window.setTimeout(() => void translate(id), settings.translationDelayMs));
   };
+  const scheduleChanged = (blocks: DraftBlock[]) => blocks.forEach((b) => { if (!b.locked && b.status === 'pending') schedule(b.id); });
 
   // move the caret where the last structural edit asked for it
   useEffect(() => {
@@ -262,72 +288,123 @@ function Writing({ projectId }: { projectId: string }) {
     if (!el) return;
     pendingFocus.current = undefined;
     el.focus();
-    const at = target.caret === 'end' ? el.value.length : target.caret;
+    const at = target.caret === 'end' ? el.value.length : Math.min(target.caret, el.value.length);
     el.setSelectionRange(at, at);
   });
 
-  const focusNeighbour = (id: string, delta: -1 | 1, side: 'zh' | 'en') => {
-    const blocks = latest.current?.blocks ?? [];
-    const neighbour = blocks[blocks.findIndex((b) => b.id === id) + delta];
-    if (!neighbour) return;
-    pendingFocus.current = { id: neighbour.id, side, caret: delta < 0 ? 'end' : 0 };
-    setDraft({ ...latest.current! });
+  const focus = (target: Focus) => { pendingFocus.current = target; setDraft({ ...latest.current! }); };
+
+  const restore = (snapshot: Snapshot | undefined) => {
+    if (!snapshot) return;
+    pendingFocus.current = snapshot.focus ?? (snapshot.blocks[0] && { id: snapshot.blocks[0].id, side: 'zh', caret: 'end' });
+    commit((doc) => ({ ...doc, blocks: snapshot.blocks }));
+    setAllSelected(undefined);
+  };
+  const undo = () => latest.current && restore(history.current.undo({ blocks: latest.current.blocks, focus: currentFocus() }));
+  const redo = () => latest.current && restore(history.current.redo({ blocks: latest.current.blocks, focus: currentFocus() }));
+
+  const onType = (block: DraftBlock, side: Side, text: string) => {
+    setAllSelected(undefined);
+    edit((doc) => ({ ...doc, blocks: doc.blocks.map((b) => b.id === block.id ? setText(b, side, text) : b) }), `${side}:${block.id}`);
+    if (side === 'zh') schedule(block.id);
   };
 
-  const onChinese = (block: DraftBlock, text: string) => {
-    update(block.id, (current) => applyMarkdownShortcut(updateChinese(current, text)));
-    schedule(block.id);
+  const clearDocument = () => {
+    const blank = newBlock(0);
+    pendingFocus.current = { id: blank.id, side: 'zh', caret: 0 };
+    edit((doc) => ({ ...doc, blocks: [blank] }));
+    setAllSelected(undefined);
   };
 
-  const onZhKey = (block: DraftBlock, event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  const onKey = (block: DraftBlock, side: Side, event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const el = event.currentTarget;
     const caret = el.selectionStart;
     const blocks = latest.current?.blocks ?? [];
     const index = blocks.findIndex((b) => b.id === block.id);
-    if (event.key === 'Enter' && event.metaKey) { event.preventDefault(); void translate(block.id); return; }
+    const key = event.key.toLowerCase();
+
+    // undo / redo for the whole document (the textarea's own undo cannot see block splits and merges)
+    if (mod(event) && key === 'z') { event.preventDefault(); if (event.shiftKey) redo(); else undo(); return; }
+    if (event.ctrlKey && !event.metaKey && key === 'y') { event.preventDefault(); redo(); return; }
+
+    // select all: the first press selects this paragraph, the next one the whole column
+    if (mod(event) && key === 'a') {
+      const whole = el.selectionStart === 0 && el.selectionEnd === el.value.length;
+      if (whole || !el.value) { event.preventDefault(); setAllSelected(side); }
+      return;
+    }
+    if (allSelected) {
+      if (mod(event) && (key === 'c' || key === 'x')) {
+        event.preventDefault();
+        void navigator.clipboard.writeText(columnText(blocks, allSelected));
+        if (key === 'x') clearDocument();
+        return;
+      }
+      if (event.key === 'Backspace' || event.key === 'Delete') { event.preventDefault(); clearDocument(); return; }
+      if (event.key !== 'Shift' && event.key !== 'Meta' && event.key !== 'Control' && event.key !== 'Alt') setAllSelected(undefined);
+    }
+
+    if (event.key === 'Enter' && mod(event) && side === 'zh') { event.preventDefault(); void translate(block.id); return; }
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
-      const [first, second] = splitBlock(block, caret, crypto.randomUUID().slice(0, 8));
-      pendingFocus.current = { id: second.id, side: 'zh', caret: 0 };
-      commit((doc) => ({ ...doc, blocks: doc.blocks.flatMap((b) => b.id === block.id ? [first, second] : [b]) }));
-      schedule(first.id); schedule(second.id);
+      const [first, second] = splitAt(block, side, caret, newId());
+      pendingFocus.current = { id: second.id, side, caret: 0 };
+      edit((doc) => ({ ...doc, blocks: doc.blocks.flatMap((b) => b.id === block.id ? [first, second] : [b]) }));
+      scheduleChanged([first, second]);
     } else if (event.key === 'Backspace' && caret === 0 && el.selectionEnd === 0) {
-      if (block.type === 'heading') { event.preventDefault(); update(block.id, (b) => ({ ...b, type: 'paragraph', level: undefined })); return; }
+      if (block.type === 'heading') { event.preventDefault(); edit((doc) => ({ ...doc, blocks: doc.blocks.map((b) => b.id === block.id ? { ...b, type: 'paragraph', level: undefined } : b) })); return; }
       if (index > 0) {
         event.preventDefault();
-        const merged = mergeBlocks(blocks[index - 1], block);
-        pendingFocus.current = { id: merged.block.id, side: 'zh', caret: merged.caret };
-        commit((doc) => ({ ...doc, blocks: doc.blocks.filter((b) => b.id !== block.id).map((b) => b.id === merged.block.id ? merged.block : b) }));
-        schedule(merged.block.id);
+        const merged = mergeInto(blocks[index - 1], block, side);
+        pendingFocus.current = { id: merged.block.id, side, caret: merged.caret };
+        edit((doc) => ({ ...doc, blocks: doc.blocks.filter((b) => b.id !== block.id).map((b) => b.id === merged.block.id ? merged.block : b) }));
+        scheduleChanged([merged.block]);
       }
-    } else if (event.key === 'ArrowUp' && caret === 0) { event.preventDefault(); focusNeighbour(block.id, -1, 'zh'); }
-    else if (event.key === 'ArrowDown' && caret === el.value.length) { event.preventDefault(); focusNeighbour(block.id, 1, 'zh'); }
+    } else if (event.key === 'ArrowUp' && caret === 0 && index > 0) {
+      event.preventDefault(); focus({ id: blocks[index - 1].id, side, caret: 'end' });
+    } else if (event.key === 'ArrowDown' && caret === el.value.length && index < blocks.length - 1) {
+      event.preventDefault(); focus({ id: blocks[index + 1].id, side, caret: 0 });
+    }
   };
 
-  /** Pasting text with several paragraphs creates one block per paragraph, like a normal editor. */
-  const onZhPaste = (id: string, event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+  /** Pasting several paragraphs makes one block per paragraph, in either column. */
+  const onPaste = (id: string, side: Side, event: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const block = latest.current?.blocks.find((b) => b.id === id);
     if (!block) return;
+    const raw = event.clipboardData.getData('text/plain');
+    if (allSelected) {
+      const paragraphs = splitPastedText(raw);
+      // select all, then paste: the pasted text replaces the document
+      event.preventDefault();
+      const blocks = documentFrom(side, paragraphs, newId);
+      const last = blocks[blocks.length - 1];
+      pendingFocus.current = { id: last.id, side, caret: 'end' };
+      edit((doc) => ({ ...doc, blocks }));
+      setAllSelected(undefined);
+      scheduleChanged(blocks);
+      return;
+    }
     const el = event.currentTarget;
-    const result = pasteParagraphs(block, el.selectionStart, el.selectionEnd, splitPastedText(event.clipboardData.getData('text/plain')), () => crypto.randomUUID().slice(0, 8));
+    const result = pasteInto(block, side, el.selectionStart, el.selectionEnd, pasteSegments(raw), newId);
     if (!result) return; // one paragraph: let the textarea paste it as usual
     event.preventDefault();
     const last = result.blocks[result.blocks.length - 1];
-    pendingFocus.current = { id: last.id, side: 'zh', caret: result.caret };
-    commit((doc) => ({ ...doc, blocks: doc.blocks.flatMap((b) => b.id === id ? result.blocks : [b]) }));
-    result.blocks.forEach((b) => schedule(b.id));
+    pendingFocus.current = { id: last.id, side, caret: result.caret };
+    edit((doc) => ({ ...doc, blocks: doc.blocks.flatMap((b) => b.id === id ? result.blocks : [b]) }));
+    scheduleChanged(result.blocks);
   };
 
   const setLevel = (level: 0 | 1 | 2 | 3) => {
     if (!activeId) return;
-    update(activeId, (b) => level ? { ...b, type: 'heading', level } : { ...b, type: 'paragraph', level: undefined });
+    edit((doc) => ({ ...doc, blocks: doc.blocks.map((b) => b.id !== activeId ? b : level ? { ...b, type: 'heading', level } : { ...b, type: 'paragraph', level: undefined }) }));
   };
 
-  const remove = (id: string) => commit((doc) => ({ ...doc, blocks: doc.blocks.length > 1 ? doc.blocks.filter((b) => b.id !== id) : [newBlock(0)] }));
+  const remove = (id: string) => edit((doc) => ({ ...doc, blocks: doc.blocks.length > 1 ? doc.blocks.filter((b) => b.id !== id) : [newBlock(0)] }));
 
   if (!draft) return <div className="rd-empty">加载中…</div>;
   const waiting = draft.blocks.filter((b) => !b.locked && b.zhText.trim() && (b.status === 'pending' || b.status === 'failed'));
   const activeBlock = draft.blocks.find((b) => b.id === activeId);
+  const fieldRef = (side: Side, id: string) => (el: HTMLTextAreaElement | null) => { if (el) fields.current.set(`${side}:${id}`, el); else fields.current.delete(`${side}:${id}`); };
 
   return (
     <div className="wdoc">
@@ -337,46 +414,45 @@ function Writing({ projectId }: { projectId: string }) {
             <button key={level} className={(activeBlock?.type === 'heading' ? activeBlock.level ?? 1 : 0) === level ? 'on' : ''} disabled={!activeId} onClick={() => setLevel(level)}>{label}</button>
           ))}
         </div>
+        <div className="wbar-group" role="group" aria-label="撤销">
+          <button title="撤销（⌘Z / Ctrl+Z）" disabled={!history.current.canUndo} onClick={undo}><Undo2 size={14} /></button>
+          <button title="重做（⌘⇧Z / Ctrl+Y）" disabled={!history.current.canRedo} onClick={redo}><Redo2 size={14} /></button>
+        </div>
         <button className="secondary tight" onClick={() => void window.allPaper.projects.exportLatex(projectId)}><Download size={14} /> 导出 LaTeX</button>
         {!!waiting.length && ai.configured && <button className="secondary tight" onClick={() => waiting.forEach((b) => void translate(b.id))}><RotateCw size={14} /> 翻译 {waiting.length} 段待处理</button>}
-        <span className="wbar-hint">像普通编辑器一样写：Enter 新段落，粘贴多段文字会自动分段，行首输入 # 变标题；停笔 {Math.round(settings.translationDelayMs / 100) / 10} 秒自动翻译，直接改英文会锁定该段。</span>
+        <span className="wbar-hint">中英两栏都像普通编辑器：Enter 新段落，粘贴多段自动分段，# 变标题；⌘/Ctrl+Z 撤销，⌘/Ctrl+A 连按两次全选整栏。停笔 {Math.round(settings.translationDelayMs / 100) / 10} 秒自动翻译，改英文会锁定该段。</span>
       </div>
       {!ai.configured && <div className="rd-banner">未配置模型服务，只能写中文；配置后点“翻译待处理段落”。<button className="text-button" onClick={openSettings}>前往设置</button></div>}
       {message && <div className="rd-banner warn">{message}<button className="text-button" onClick={() => setMessage(undefined)}>知道了</button></div>}
+      {allSelected && <div className="rd-banner">已全选{allSelected === 'zh' ? '中文' : '英文'}栏：⌘/Ctrl+C 复制，⌘/Ctrl+X 剪切，Delete 清空，粘贴替换整篇，Esc 或点击取消。<button className="text-button" onClick={() => setAllSelected(undefined)}>取消</button></div>}
 
-      <div className="wpage">
+      <div className={`wpage${allSelected ? ` select-${allSelected}` : ''}`} onMouseDown={() => allSelected && setAllSelected(undefined)}>
         <div className="wcols"><span>中文</span><span>English</span></div>
         {draft.blocks.map((block) => {
           const headingClass = block.type === 'heading' ? ` h${block.level ?? 1}` : '';
           return (
             <div className={`wrow${block.id === activeId ? ' active' : ''}`} key={block.id}>
               <span className={`wdot st-${block.status}`} title={statusName[block.status] ?? block.status}>{block.locked && <LockKeyhole size={11} />}</span>
-              <div className="wcell" onClick={() => fields.current.get(`zh:${block.id}`)?.focus()}>
-                <AutoText
-                  className={`wtext${headingClass}`} value={block.zhText} placeholder={block.id === draft.blocks[0].id && !block.zhText ? '开始写中文…' : ''}
-                  setRef={(el) => { if (el) fields.current.set(`zh:${block.id}`, el); else fields.current.delete(`zh:${block.id}`); }}
-                  onFocus={() => setActiveId(block.id)} onChange={(text) => onChinese(block, text)} onKeyDown={(e) => onZhKey(block, e)} onPaste={(e) => onZhPaste(block.id, e)}
-                />
-              </div>
-              <div className="wcell en" onClick={() => fields.current.get(`en:${block.id}`)?.focus()}>
-                <AutoText
-                  className={`wtext${headingClass}`} value={block.enText} placeholder={block.status === 'translating' ? '翻译中…' : ''}
-                  setRef={(el) => { if (el) fields.current.set(`en:${block.id}`, el); else fields.current.delete(`en:${block.id}`); }}
-                  onFocus={() => setActiveId(block.id)} onChange={(text) => update(block.id, (b) => editEnglish(b, text))}
-                  onKeyDown={(e) => {
-                    if (e.key === 'ArrowUp' && e.currentTarget.selectionStart === 0) { e.preventDefault(); focusNeighbour(block.id, -1, 'en'); }
-                    else if (e.key === 'ArrowDown' && e.currentTarget.selectionStart === e.currentTarget.value.length) { e.preventDefault(); focusNeighbour(block.id, 1, 'en'); }
-                  }}
-                />
-                <div className="wactions">
-                  {(block.locked || block.status === 'failed' || block.status === 'changed') && <button title={block.locked ? '解锁并重新翻译' : '重新翻译'} onClick={(e) => { e.stopPropagation(); if (block.locked) update(block.id, unlock); if (ai.configured) void translate(block.id); }}>{block.locked ? <Unlock size={12} /> : <RotateCw size={12} />}</button>}
-                  <button title="删除这一段" onClick={(e) => { e.stopPropagation(); remove(block.id); }}><Trash2 size={12} /></button>
+              {(['zh', 'en'] as const).map((side) => (
+                <div key={side} className={`wcell${side === 'en' ? ' en' : ''}`} onClick={() => fields.current.get(`${side}:${block.id}`)?.focus()}>
+                  <AutoText
+                    className={`wtext${headingClass}`} value={textOf(block, side)} setRef={fieldRef(side, block.id)}
+                    placeholder={side === 'zh' ? (block.id === draft.blocks[0].id && !block.zhText ? '开始写中文…' : '') : block.status === 'translating' ? '翻译中…' : ''}
+                    onFocus={() => setActiveId(block.id)} onChange={(text) => onType(block, side, text)}
+                    onKeyDown={(e) => onKey(block, side, e)} onPaste={(e) => onPaste(block.id, side, e)}
+                  />
+                  {side === 'en' && (
+                    <div className="wactions">
+                      {(block.locked || block.status === 'failed' || block.status === 'changed') && <button title={block.locked ? '解锁并重新翻译' : '重新翻译'} onClick={(e) => { e.stopPropagation(); if (block.locked) edit((doc) => ({ ...doc, blocks: doc.blocks.map((b) => b.id === block.id ? unlock(b) : b) })); if (ai.configured) void translate(block.id); }}>{block.locked ? <Unlock size={12} /> : <RotateCw size={12} />}</button>}
+                      <button title="删除这一段" onClick={(e) => { e.stopPropagation(); remove(block.id); }}><Trash2 size={12} /></button>
+                    </div>
+                  )}
                 </div>
-              </div>
+              ))}
             </div>
           );
         })}
-        <button className="wadd" onClick={() => { const block = newBlock(draft.blocks.length); pendingFocus.current = { id: block.id, side: 'zh', caret: 0 }; commit((doc) => ({ ...doc, blocks: [...doc.blocks, block] })); }}><Plus size={13} /> 添加段落</button>
+        <button className="wadd" onClick={() => { const block = newBlock(draft.blocks.length); pendingFocus.current = { id: block.id, side: 'zh', caret: 0 }; edit((doc) => ({ ...doc, blocks: [...doc.blocks, block] })); }}><Plus size={13} /> 添加段落</button>
       </div>
     </div>
   );
