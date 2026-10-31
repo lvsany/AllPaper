@@ -13,6 +13,8 @@ import { AnnotationsPanel } from './AnnotationsPanel';
 import { Block, type DisplayMode } from './Block';
 import { blockHtml, translationText } from './html';
 import { SelectionBar, type SelectionRect } from './SelectionBar';
+import { ImageViewer, type ViewerImage } from './ImageViewer';
+import { decodePosition, encodePosition } from '../../core/reading-position';
 
 interface Props {
   paper: Paper;
@@ -46,6 +48,8 @@ export function ReaderView({ paper, anchor, onBack, onOpenPaper }: Props) {
   const [question, setQuestion] = useState<PendingQuestion>();
   const [activeHeading, setActiveHeading] = useState<string>();
   const [refCard, setRefCard] = useState<{ text: string; arxivId?: string; top: number; left: number }>();
+  const [viewer, setViewer] = useState<{ images: ViewerImage[]; start: number }>();
+  const [resumed, setResumed] = useState<{ section: string }>();
 
   const scroller = useRef<HTMLDivElement>(null);
   const article = useRef<HTMLElement>(null);
@@ -109,12 +113,34 @@ export function ReaderView({ paper, anchor, onBack, onOpenPaper }: Props) {
     const key = `${paper.id}:${target ?? ''}`;
     if (initialJump.current === key) return;
     initialJump.current = key;
-    const timer = window.setTimeout(() => {
-      if (target) focusAnchor(target);
-      else if (paper.lastPosition && byId.has(paper.lastPosition)) scrollToBlock(paper.lastPosition, false);
-    }, 150);
+    const timers: number[] = [];
+    timers.push(window.setTimeout(() => {
+      if (target) { focusAnchor(target); return; }
+      const position = decodePosition(paper.lastPosition);
+      const block = position && byId.get(position.blockId);
+      if (!position || !block) return;
+      const apply = () => {
+        const root = scroller.current;
+        const el = root?.querySelector<HTMLElement>(`[id="${CSS.escape(position.blockId)}"]`);
+        if (!root || !el) return undefined;
+        const top = root.scrollTop + el.getBoundingClientRect().top - root.getBoundingClientRect().top + position.fraction * el.offsetHeight - 8;
+        root.scrollTop = Math.max(0, top);
+        return root.scrollTop;
+      };
+      const first = apply();
+      if (first === undefined) return;
+      if (first > 200) setResumed({ section: block.sectionPath.at(-1) ?? '' });
+      // fonts, formulas and images can still shift the layout a little; correct once if the reader has not moved
+      timers.push(window.setTimeout(() => { if (scroller.current?.scrollTop === first) apply(); }, 600));
+    }, 120));
+    return () => timers.forEach((t) => window.clearTimeout(t));
+  }, [bundle, anchor, paper.id, paper.lastPosition, byId, focusAnchor]);
+
+  useEffect(() => {
+    if (!resumed) return;
+    const timer = window.setTimeout(() => setResumed(undefined), 7000);
     return () => window.clearTimeout(timer);
-  }, [bundle, anchor, paper.id, paper.lastPosition, byId, focusAnchor, scrollToBlock]);
+  }, [resumed]);
 
   // ---- translation --------------------------------------------------------------
   const requestTranslation = useCallback(async (ids: string[], force = false) => {
@@ -165,23 +191,45 @@ export function ReaderView({ paper, anchor, onBack, onOpenPaper }: Props) {
   const retranslate = useCallback((p: Paragraph) => { void requestTranslation([p.id], true); }, [requestTranslation]);
 
   // ---- reading position, table of contents --------------------------------------
+  const position = useRef<string | undefined>(undefined);
+  const savedPosition = useRef<string | undefined>(paper.lastPosition);
+  const positionTimer = useRef<number | undefined>(undefined);
+
+  const savePosition = useCallback(async () => {
+    const value = position.current;
+    if (!value || value === savedPosition.current) return;
+    savedPosition.current = value;
+    try {
+      const next = await window.allPaper.papers.update(paper.id, { lastPosition: value, ...(paper.readStatus === 'unread' ? { readStatus: 'reading' as const } : {}) });
+      ws.replacePaper(next);
+    } catch { savedPosition.current = undefined; }
+  }, [paper.id, paper.readStatus, ws]);
+
   const onScroll = useCallback(() => {
     const root = scroller.current;
     if (!root) return;
-    const top = root.getBoundingClientRect().top + 90;
+    const line = root.getBoundingClientRect().top + 8;
     let current: string | undefined;
-    let first: string | undefined;
+    let found: { id: string; fraction: number } | undefined;
     root.querySelectorAll<HTMLElement>('[data-block]').forEach((el) => {
-      if (first === undefined && el.getBoundingClientRect().bottom > top) first = el.dataset.pid;
-      if (el.classList.contains('rd-block-heading') && el.getBoundingClientRect().top <= top) current = el.dataset.pid;
+      const box = el.getBoundingClientRect();
+      if (!found && box.bottom > line && el.dataset.pid) found = { id: el.dataset.pid, fraction: box.height ? (line - box.top) / box.height : 0 };
+      if (el.classList.contains('rd-block-heading') && box.top <= line + 82) current = el.dataset.pid;
     });
     setActiveHeading(current);
+    position.current = found ? encodePosition({ blockId: found.id, fraction: Math.max(0, found.fraction) }) : undefined;
     window.clearTimeout(positionTimer.current);
-    positionTimer.current = window.setTimeout(() => {
-      if (first) void window.allPaper.papers.update(paper.id, { lastPosition: first, ...(paper.readStatus === 'unread' ? { readStatus: 'reading' as const } : {}) });
-    }, 1500);
-  }, [paper.id, paper.readStatus]);
-  const positionTimer = useRef<number | undefined>(undefined);
+    positionTimer.current = window.setTimeout(() => void savePosition(), 600);
+  }, [savePosition]);
+
+  // switching pages or closing the app should not lose the last few seconds of reading
+  const saveRef = useRef(savePosition);
+  saveRef.current = savePosition;
+  useEffect(() => {
+    const flush = () => { window.clearTimeout(positionTimer.current); void saveRef.current(); };
+    window.addEventListener('beforeunload', flush);
+    return () => { window.removeEventListener('beforeunload', flush); flush(); };
+  }, []);
 
   const headings = useMemo(() => paragraphs.filter((p) => p.type === 'heading' && (p.level ?? 1) <= 2), [paragraphs]);
 
@@ -263,8 +311,31 @@ export function ReaderView({ paper, anchor, onBack, onOpenPaper }: Props) {
     setSelection({ portions, rect: { top: box.top, bottom: box.bottom, left: box.left, width: box.width } });
   }, []);
 
+  const openImage = (img: HTMLImageElement) => {
+    // figures only: tiny inline icons (diff markers, logos repeated in tables) are not worth a viewer, and repeats are shown once
+    const seen = new Set<string>();
+    const all = [...(article.current?.querySelectorAll<HTMLImageElement>('.rd-orig img') ?? [])].filter((el) => {
+      const src = el.currentSrc || el.src;
+      if (el.getBoundingClientRect().width < MIN_VIEWER_WIDTH || seen.has(src)) return el === img;
+      seen.add(src);
+      return true;
+    });
+    const captionOf = (el: HTMLImageElement) => {
+      const block = el.closest('section.rd-block');
+      const next = block?.nextElementSibling;
+      const prev = block?.previousElementSibling;
+      const caption = next?.classList.contains('rd-block-caption') ? next : prev?.classList.contains('rd-block-caption') ? prev : undefined;
+      if (!caption) return undefined;
+      const original = caption.querySelector<HTMLElement>('.rd-orig')?.innerText.trim();
+      const translated = caption.querySelector<HTMLElement>('.rd-trans:not(.rd-trans-loading)')?.innerText.trim();
+      return [original, translated].filter(Boolean).join('\n');
+    };
+    setViewer({ images: all.map((el) => ({ src: el.currentSrc || el.src, alt: el.alt, caption: captionOf(el) })), start: Math.max(0, all.indexOf(img)) });
+  };
+
   const onArticleClick = (event: React.MouseEvent) => {
     const target = event.target as HTMLElement;
+    if (target instanceof HTMLImageElement && target.closest('.rd-orig') && target.getBoundingClientRect().width >= MIN_VIEWER_WIDTH && window.getSelection()?.isCollapsed) { openImage(target); return; }
     const mark = target.closest<HTMLElement>('mark[data-ann]');
     if (mark && window.getSelection()?.isCollapsed) { setActiveAnnotation(mark.dataset.ann); setPanelOpen(true); setTab('annotations'); }
     const link = target.closest<HTMLAnchorElement>('a[href]');
@@ -431,6 +502,16 @@ export function ReaderView({ paper, anchor, onBack, onOpenPaper }: Props) {
         />
       )}
 
+      {viewer && <ImageViewer images={viewer.images} start={viewer.start} onClose={() => setViewer(undefined)} />}
+
+      {resumed && view === 'reader' && (
+        <div className="resume-pill">
+          已回到上次读到的位置{resumed.section ? `：${resumed.section}` : ''}
+          <button onClick={() => { scroller.current?.scrollTo({ top: 0, behavior: 'smooth' }); setResumed(undefined); }}>回到开头</button>
+          <button aria-label="关闭" onClick={() => setResumed(undefined)}>×</button>
+        </div>
+      )}
+
       {refCard && (
         <div className="refcard" style={{ top: refCard.top, left: refCard.left }}>
           <p>{refCard.text}</p>
@@ -452,3 +533,4 @@ export function ReaderView({ paper, anchor, onBack, onOpenPaper }: Props) {
 }
 
 const NO_HIGHLIGHTS: Highlight[] = [];
+const MIN_VIEWER_WIDTH = 48;

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Download, FileText, LockKeyhole, Plus, RotateCw, Search, Sparkles, Trash2, Unlock } from 'lucide-react';
 import {
-  applyMarkdownShortcut, beginTranslation, editEnglish, failTranslation, hash, mergeBlocks, receiveTranslation, splitBlock, unlock, updateChinese,
+  applyMarkdownShortcut, pasteParagraphs, splitPastedText, beginTranslation, editEnglish, failTranslation, hash, mergeBlocks, receiveTranslation, splitBlock, unlock, updateChinese,
   type DraftBlock
 } from '../core/draft';
 import { citationsIn, type CitationRef } from '../core/note-markdown';
@@ -178,14 +178,15 @@ function TitleField({ project, autoFocus, onFocused }: { project: Project; autoF
 
 const statusName: Record<string, string> = { synced: '已同步', translating: '翻译中', locked: '英文已手改（已锁定）', changed: '中文已变更，英文未更新', failed: '翻译失败', pending: '待翻译' };
 
-function AutoText({ value, onChange, onKeyDown, onFocus, placeholder, setRef, className }: {
+function AutoText({ value, onChange, onKeyDown, onFocus, onPaste, placeholder, setRef, className }: {
   value: string; onChange(value: string): void; onKeyDown?(event: React.KeyboardEvent<HTMLTextAreaElement>): void; onFocus?(): void;
+  onPaste?(event: React.ClipboardEvent<HTMLTextAreaElement>): void;
   placeholder?: string; setRef?(el: HTMLTextAreaElement | null): void; className?: string;
 }) {
   return (
     <textarea
       ref={setRef} className={className} value={value} rows={1} placeholder={placeholder} spellCheck={false}
-      onChange={(e) => onChange(e.target.value)} onKeyDown={onKeyDown} onFocus={onFocus}
+      onChange={(e) => onChange(e.target.value)} onKeyDown={onKeyDown} onFocus={onFocus} onPaste={onPaste}
     />
   );
 }
@@ -303,6 +304,20 @@ function Writing({ projectId }: { projectId: string }) {
     else if (event.key === 'ArrowDown' && caret === el.value.length) { event.preventDefault(); focusNeighbour(block.id, 1, 'zh'); }
   };
 
+  /** Pasting text with several paragraphs creates one block per paragraph, like a normal editor. */
+  const onZhPaste = (id: string, event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const block = latest.current?.blocks.find((b) => b.id === id);
+    if (!block) return;
+    const el = event.currentTarget;
+    const result = pasteParagraphs(block, el.selectionStart, el.selectionEnd, splitPastedText(event.clipboardData.getData('text/plain')), () => crypto.randomUUID().slice(0, 8));
+    if (!result) return; // one paragraph: let the textarea paste it as usual
+    event.preventDefault();
+    const last = result.blocks[result.blocks.length - 1];
+    pendingFocus.current = { id: last.id, side: 'zh', caret: result.caret };
+    commit((doc) => ({ ...doc, blocks: doc.blocks.flatMap((b) => b.id === id ? result.blocks : [b]) }));
+    result.blocks.forEach((b) => schedule(b.id));
+  };
+
   const setLevel = (level: 0 | 1 | 2 | 3) => {
     if (!activeId) return;
     update(activeId, (b) => level ? { ...b, type: 'heading', level } : { ...b, type: 'paragraph', level: undefined });
@@ -324,7 +339,7 @@ function Writing({ projectId }: { projectId: string }) {
         </div>
         <button className="secondary tight" onClick={() => void window.allPaper.projects.exportLatex(projectId)}><Download size={14} /> 导出 LaTeX</button>
         {!!waiting.length && ai.configured && <button className="secondary tight" onClick={() => waiting.forEach((b) => void translate(b.id))}><RotateCw size={14} /> 翻译 {waiting.length} 段待处理</button>}
-        <span className="wbar-hint">像普通编辑器一样写：Enter 新段落，行首输入 # 变标题；停笔 {Math.round(settings.translationDelayMs / 100) / 10} 秒自动翻译，直接改英文会锁定该段。</span>
+        <span className="wbar-hint">像普通编辑器一样写：Enter 新段落，粘贴多段文字会自动分段，行首输入 # 变标题；停笔 {Math.round(settings.translationDelayMs / 100) / 10} 秒自动翻译，直接改英文会锁定该段。</span>
       </div>
       {!ai.configured && <div className="rd-banner">未配置模型服务，只能写中文；配置后点“翻译待处理段落”。<button className="text-button" onClick={openSettings}>前往设置</button></div>}
       {message && <div className="rd-banner warn">{message}<button className="text-button" onClick={() => setMessage(undefined)}>知道了</button></div>}
@@ -340,7 +355,7 @@ function Writing({ projectId }: { projectId: string }) {
                 <AutoText
                   className={`wtext${headingClass}`} value={block.zhText} placeholder={block.id === draft.blocks[0].id && !block.zhText ? '开始写中文…' : ''}
                   setRef={(el) => { if (el) fields.current.set(`zh:${block.id}`, el); else fields.current.delete(`zh:${block.id}`); }}
-                  onFocus={() => setActiveId(block.id)} onChange={(text) => onChinese(block, text)} onKeyDown={(e) => onZhKey(block, e)}
+                  onFocus={() => setActiveId(block.id)} onChange={(text) => onChinese(block, text)} onKeyDown={(e) => onZhKey(block, e)} onPaste={(e) => onZhPaste(block.id, e)}
                 />
               </div>
               <div className="wcell en" onClick={() => fields.current.get(`en:${block.id}`)?.focus()}>

@@ -17,6 +17,8 @@ interface Workspace {
   ai: AiStatus;
   settings: Settings;
   refreshPapers(): Promise<void>;
+  /** Puts an updated paper into the shared list without reloading the whole library. */
+  replacePaper(paper: Paper): void;
   refreshProjects(): Promise<void>;
   refreshAi(): Promise<void>;
   selectProject(id: string): void;
@@ -40,6 +42,7 @@ export function WorkspaceProvider({ children, libraryReady, openSettings, settin
   const [ai, setAi] = useState<AiStatus>({ configured: false, provider: 'anthropic', mock: false });
 
   const refreshPapers = useCallback(async () => { if (libraryReady) { setPapers(await window.allPaper.papers.list()); setPapersLoaded(true); } }, [libraryReady]);
+  const replacePaper = useCallback((paper: Paper) => setPapers((list) => list.map((p) => p.id === paper.id ? paper : p)), []);
   const refreshProjects = useCallback(async () => { if (libraryReady) setProjects(await window.allPaper.projects.list()); }, [libraryReady]);
   const refreshAi = useCallback(async () => { setAi(await window.allPaper.ai.status()); }, []);
 
@@ -63,7 +66,7 @@ export function WorkspaceProvider({ children, libraryReady, openSettings, settin
     return {
       papers, papersLoaded, projects, ai, settings,
       currentProject: projects.find((project) => project.id === currentId) ?? projects[0],
-      refreshPapers, refreshProjects, refreshAi, selectProject, createProject, openSettings,
+      refreshPapers, replacePaper, refreshProjects, refreshAi, selectProject, createProject, openSettings,
       paperByKey: (key) => byKey.get(key),
       labelOf: (ref) => {
         const paper = byKey.get(ref.key);
@@ -75,7 +78,7 @@ export function WorkspaceProvider({ children, libraryReady, openSettings, settin
         return ref.page ? `${label}, p.${ref.page}` : label;
       }
     };
-  }, [papers, papersLoaded, projects, ai, settings, currentId, refreshPapers, refreshProjects, refreshAi, selectProject, createProject, openSettings]);
+  }, [papers, papersLoaded, projects, ai, settings, currentId, refreshPapers, replacePaper, refreshProjects, refreshAi, selectProject, createProject, openSettings]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

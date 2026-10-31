@@ -62,4 +62,11 @@ describe('LaTeXML article parser', () => {
     for (const id of ['S1.E1', 'S1.F1', 'bib.bib1']) expect(find(id).masked).toBeUndefined();
     expect(find('S1.F1.cap').masked).toContain('Overview.');
   });
+
+  it('repairs numbers that LaTeXML garbles into "19true000"', () => {
+    const html = '<article class="ltx_document"><div class="ltx_para"><p id="p1" class="ltx_p">We collect <math alttext="19true000" display="inline"><mrow><mn>19</mn><mi>t</mi><mn>000</mn></mrow></math> pairs and <math alttext="1true250true000" display="inline"><mn>1</mn></math> tokens with <math alttext="x" display="inline"><mi>x</mi></math>.</p></div></article>';
+    const p = parseLatexmlHtml(html, { paperId: 'x', baseUrl: 'https://arxiv.org/html/1' }).paragraphs[0];
+    expect(p.text).toBe('We collect 19,000 pairs and 1,250,000 tokens with $x$.');
+    expect(p.html).not.toContain('true');
+  });
 });

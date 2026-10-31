@@ -155,6 +155,12 @@ function walkInline(node: Node, out: Inline, ctx: Ctx, opts: WalkOptions): void 
   if (tag === 'br') { out.html += '<br>'; out.text += ' '; out.masked += ' '; return; }
   if (tag === 'math') {
     const alt = el.getAttribute('alttext') ?? '';
+    // LaTeXML turns siunitx/numprint thousands separators into "19true000"; arxiv.org shows the same. Restore 19,000.
+    if (/^\d{1,3}(true\d{3})+$/.test(alt)) {
+      const number = alt.replace(/true/g, ',');
+      out.html += esc(number); out.text += number; out.masked += number;
+      return;
+    }
     let inner = '';
     for (const child of Array.from(el.childNodes)) {
       const part = emptyInline();

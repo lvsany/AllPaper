@@ -63,5 +63,5 @@
 
 ## 自动化测试
 
-- 单元（`npm test`，89 项）：citekey、去重、LaTeXML 解析（脚本/事件处理器被过滤、占位符、id 对应）、arXiv 编号与 Atom 解析、笔记 Markdown 往返、划词偏移/高亮/重定位（jsdom）、提示词与出处校验、模型提供商（本地桩 HTTP）、论文翻译与缓存、批注、项目笔记、双栏状态机、LaTeX/BibTeX。
+- 单元（`npm test`，94 项）：citekey、去重、LaTeXML 解析（脚本/事件处理器被过滤、占位符、id 对应）、arXiv 编号与 Atom 解析、笔记 Markdown 往返、划词偏移/高亮/重定位（jsdom）、提示词与出处校验、模型提供商（本地桩 HTTP）、论文翻译与缓存、批注、项目笔记、双栏状态机、LaTeX/BibTeX。
 - 端到端冒烟（`npm run smoke`）：真实 arXiv 入库 → 阅读视图含公式与段落译文 → 划词摘录进笔记并带引用 → 助手出处校验 → `note.md` 含锚点引用。依赖联网；模型用本地桩。

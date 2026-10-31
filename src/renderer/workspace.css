@@ -409,3 +409,25 @@ mark.hl-active { outline: 2px solid var(--accent); outline-offset: 1px; }
 .memo-search { margin: 0 14px 8px; display: flex; gap: 7px; align-items: center; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--ink-faint); }
 .memo-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 13px; color: var(--ink); }
 .pad { padding: 14px; line-height: 1.7; }
+
+/* image viewer */
+.rd-article .rd-orig img { cursor: zoom-in; }
+.rd-article .rd-orig img[width]:is([width='1'],[width='2'],[width='3'],[width='4'],[width='5'],[width='6'],[width='7'],[width='8'],[width='9']) { cursor: default; }
+.viewer { position: fixed; inset: 0; z-index: 60; background: #0d0f0cee; display: flex; flex-direction: column; color: #eef1ea; }
+.viewer-bar { display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 12px 16px; }
+.viewer-count { margin-right: auto; font-size: 13px; color: #b7bfb3; font-variant-numeric: tabular-nums; }
+.viewer-bar button { border: 0; background: #ffffff14; color: inherit; height: 32px; min-width: 32px; padding: 0 8px; border-radius: 8px; display: grid; place-items: center; font-size: 12.5px; }
+.viewer-bar button:hover { background: #ffffff2a; }
+.viewer-zoom { font-variant-numeric: tabular-nums; min-width: 58px !important; }
+.viewer-stage { flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; cursor: zoom-in; user-select: none; }
+.viewer-stage.pannable { cursor: grab; }
+.viewer-stage.pannable:active { cursor: grabbing; }
+.viewer-stage img { max-width: 92vw; max-height: calc(100vh - 170px); object-fit: contain; background: #fff; border-radius: 4px; transform-origin: center center; box-shadow: 0 20px 60px #0008; will-change: transform; }
+.viewer-nav { position: absolute; top: 50%; transform: translateY(-50%); border: 0; background: #ffffff14; color: #fff; width: 44px; height: 64px; border-radius: 10px; display: grid; place-items: center; }
+.viewer-nav:hover { background: #ffffff2a; }
+.viewer-nav.prev { left: 16px; } .viewer-nav.next { right: 16px; }
+.viewer-caption { max-width: 900px; margin: 0 auto; padding: 10px 24px 20px; font-size: 13.5px; line-height: 1.7; color: #d7ddd2; text-align: center; white-space: pre-line; }
+/* "back where you left off" */
+.resume-pill { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 30; display: flex; align-items: center; gap: 10px; background: #263020; color: #f0f4ea; font-size: 13px; padding: 8px 10px 8px 16px; border-radius: 22px; box-shadow: 0 10px 30px #0004; max-width: 70vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.resume-pill button { border: 0; background: #ffffff1c; color: inherit; border-radius: 14px; padding: 4px 10px; font-size: 12.5px; }
+.resume-pill button:hover { background: #ffffff33; }
