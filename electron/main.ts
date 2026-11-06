@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, net, protocol, safeStorage, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, net, protocol, safeStorage, shell } from 'electron';
 import Database from 'better-sqlite3';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
@@ -229,7 +229,11 @@ function safeAssetPath(url: string): string | undefined {
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1440, height: 920, minWidth: 960, minHeight: 680,
-    titleBarStyle: 'hiddenInset', backgroundColor: '#f7f6f2',
+    titleBarStyle: 'hiddenInset',
+    // macOS: the sidebar shows the native translucent material; the page paints everything else.
+    ...(process.platform === 'darwin'
+      ? { vibrancy: 'sidebar' as const, visualEffectState: 'followWindow' as const, backgroundColor: '#00000000', trafficLightPosition: { x: 18, y: 18 } }
+      : { backgroundColor: nativeTheme.shouldUseDarkColors ? '#1e1f22' : '#ffffff' }),
     webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   const url = process.env.VITE_DEV_SERVER_URL;

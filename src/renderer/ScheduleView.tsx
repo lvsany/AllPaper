@@ -70,7 +70,7 @@ export function ScheduleView() {
   return (
     <section className="planner">
       <header className="planner-head">
-        <div><div className="eyebrow">{plan.overdue.length + plan.groups.reduce((n, g) => n + g.events.length, 0)} 项未完成</div><h1>日程</h1></div>
+        <div className="page-title"><h1>日程</h1><span className="page-count">{plan.overdue.length + plan.groups.reduce((n, g) => n + g.events.length, 0)} 项未完成</span></div>
         <label className="check-inline"><input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} /> 显示已完成</label>
       </header>
       {error && <div className="rd-banner warn">{error}</div>}

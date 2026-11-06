@@ -36,10 +36,7 @@ export function MemoView() {
   return (
     <section className="keys">
       <header className="keys-head">
-        <div>
-          <div className="eyebrow">{settings.keysPageName.trim() || 'Keys'}</div>
-          <h1>{settings.keysPageName.trim() || 'Keys'}</h1>
-        </div>
+        <div className="page-title"><h1>{settings.keysPageName.trim() || 'Keys'}</h1></div>
         <button className="primary" onClick={() => void addRow()}><Plus size={15} /> 添加一行</button>
       </header>
       <p className="keys-hint"><Lock size={13} /> 锁定的行：值用系统钥匙串加密，只存在本机应用数据目录，不写入资料库，不随备份或同步。解锁的行以明文存进资料库，适合 skills 名称这类不敏感的内容。</p>

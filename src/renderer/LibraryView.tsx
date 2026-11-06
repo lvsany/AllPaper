@@ -132,7 +132,7 @@ export function LibraryView({ onRead }: { onRead(paper: Paper): void }) {
       if (file?.name.toLowerCase().endsWith('.pdf')) void importPdf(window.allPaper.papers.pathForFile(file));
     }}>
       <header className="library-header">
-        <div><div className="eyebrow">文献库 · {papers.length} 篇</div><h1>文献库与搜索</h1></div>
+        <div className="page-title"><h1>文献库</h1><span className="page-count">{papers.length} 篇</span></div>
         <div className="toolbar">
           {missing > 0 && <button className="secondary" onClick={() => void fetchMissing()} disabled={Boolean(busy)} title="对没有正文的文献，按 arXiv / 开放获取来源尝试获取全文"><LibraryBig size={15} /> 补全全文 ({missing})</button>}
           <button className="secondary" onClick={() => setCreating(true)}><FilePlus2 size={15} /> 新建条目</button>

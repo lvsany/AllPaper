@@ -90,13 +90,14 @@ function Shell({ tabs, setTabs, status, settings, refresh }: { tabs: TabsState; 
 
   return (
     <div className="app-shell">
+      <div className="drag-strip" />
       <aside className="sidebar">
-        <div className="brand"><span className="brand-mark">A</span><span>AllPaper</span></div>
+        <div className="sidebar-top"><div className="brand"><span className="brand-mark">A</span><span>AllPaper</span></div></div>
         <nav>
           {SCREENS.map(({ id }) => {
             const Icon = SCREEN_ICON[id];
             const cls = screen === id ? 'nav-item active' : parent === id ? 'nav-item parent' : 'nav-item';
-            return <button key={id} className={cls} onClick={() => go(id)}><Icon size={18} />{nameOf(id)}</button>;
+            return <button key={id} className={cls} onClick={() => go(id)}><Icon size={16} strokeWidth={1.8} />{nameOf(id)}</button>;
           })}
         </nav>
         <div className="tabs-head"><span>最近浏览</span></div>
@@ -112,7 +113,7 @@ function Shell({ tabs, setTabs, status, settings, refresh }: { tabs: TabsState; 
                 onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); close(item.id); } }}
                 onKeyDown={(e) => { if (e.key === 'Enter') activateRecent(item); }}
               >
-                <Icon size={15} />
+                <Icon size={14} strokeWidth={1.8} />
                 <span>{label}</span>
                 <button className="tab-close" title="关闭" aria-label={`关闭 ${label}`} onClick={(e) => { e.stopPropagation(); close(item.id); }}><X size={13} /></button>
               </div>

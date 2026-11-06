@@ -3,8 +3,7 @@
 .planner { overflow: auto; }
 .planner > * { max-width: 880px; width: calc(100% - 68px); margin-left: auto; margin-right: auto; }
 .k-deadline { --k: #d9564a; } .k-reading { --k: #4b86d6; } .k-experiment { --k: #5aa23a; } .k-meeting { --k: #8a63c9; } .k-other { --k: #8a9183; }
-.planner-head { display: flex; justify-content: space-between; align-items: flex-end; padding: 26px 0 14px; }
-.planner-head h1 { margin: 6px 0 0; font-size: 26px; letter-spacing: -.03em; }
+.planner-head { display: flex; justify-content: space-between; align-items: center; padding: 22px 0 16px; }
 .ev { background: var(--paper); border: 1px solid var(--line); border-left: 4px solid var(--k, #999); border-radius: 8px; }
 .ev.late { border-color: #e7b2ab; border-left-color: #d9564a; }
 .ev-main { display: flex; align-items: center; gap: 8px; padding: 7px 9px; }
@@ -18,11 +17,11 @@
 .ev-edit { padding: 4px 10px 10px; display: grid; gap: 7px; border-top: 1px dashed var(--line); }
 .ev-edit-row { display: flex; gap: 6px; }
 .ev-edit textarea { resize: vertical; }
-.text-button.danger { color: #a8422f; justify-self: start; display: inline-flex; gap: 4px; align-items: center; }
+.text-button.danger { color: var(--danger); justify-self: start; display: inline-flex; gap: 4px; align-items: center; }
 
 
-.plan-add { display: flex; gap: 8px; margin-bottom: 18px; padding: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 11px; }
-.plan-add input, .plan-add select, .ev-edit input, .ev-edit select, .ev-edit textarea { border: 1px solid var(--line); background: var(--paper); border-radius: 7px; padding: 7px 9px; font-size: 13px; color: var(--ink); font-family: inherit; }
+.plan-add { display: flex; gap: 8px; margin-bottom: 20px; padding: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.plan-add input, .plan-add select, .ev-edit input, .ev-edit select, .ev-edit textarea { border: 1px solid var(--line-strong); background: var(--field); border-radius: 7px; padding: 6px 9px; font-size: 13px; color: var(--ink); font-family: inherit; }
 .plan-add input:first-child { flex: 1; min-width: 0; }
 .agenda { padding-bottom: 80px; }
 .agenda-group { margin-bottom: 20px; display: grid; gap: 7px; }
@@ -31,16 +30,15 @@
 .check-inline { display: inline-flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--ink-soft); }
 
 /* keys table */
-.keys { height: 100vh; overflow: auto; padding: 26px 34px 60px; background: var(--paper); color: var(--ink); max-width: 1040px; margin: 0 auto; }
-.keys-head { display: flex; justify-content: space-between; align-items: flex-end; }
-.keys-head h1 { margin: 6px 0 0; font-size: 26px; letter-spacing: -.03em; }
+.keys { height: 100vh; overflow: auto; padding: 0 34px 60px; background: var(--paper); color: var(--ink); max-width: 1040px; margin: 0 auto; }
+.keys-head { display: flex; justify-content: space-between; align-items: center; padding-top: 22px; }
 .keys-hint { display: flex; gap: 7px; align-items: flex-start; margin: 14px 0 16px; font-size: 12.5px; line-height: 1.65; color: var(--ink-faint); }
 .keys-hint svg { margin-top: 3px; flex: none; }
 .keys-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
 .keys-table th { text-align: left; font-size: 12px; font-weight: 600; color: var(--ink-faint); padding: 6px 8px; border-bottom: 1px solid var(--line); }
 .keys-table td { padding: 5px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 .keys-table td > input, .key-cell input { width: 100%; border: 1px solid transparent; background: transparent; border-radius: 6px; padding: 8px; font-size: 13.5px; color: var(--ink); font-family: inherit; }
-.keys-table td > input:hover, .key-cell input:hover { background: #00000006; }
+.keys-table td > input:hover, .key-cell input:hover { background: var(--hover); }
 .keys-table td > input:focus, .key-cell input:focus { outline: none; border-color: var(--accent); background: var(--paper); }
 .key-cell { display: flex; align-items: center; gap: 2px; }
 .key-cell code { flex: 1; min-width: 0; padding: 7px 8px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

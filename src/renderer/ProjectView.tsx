@@ -437,7 +437,7 @@ function Writing({ projectId }: { projectId: string }) {
         </div>
         <button className="secondary tight" onClick={() => void window.allPaper.projects.exportLatex(projectId)}><Download size={14} /> 导出 LaTeX</button>
         {!!waiting.length && ai.configured && <button className="secondary tight" onClick={() => waiting.forEach((b) => translate(b.id))}><RotateCw size={14} /> 翻译 {waiting.length} 段待处理</button>}
-        <span className="wbar-hint">中英两栏都像普通编辑器：Enter 新段落，粘贴多段自动分段，# 变标题；⌘/Ctrl+Z 撤销，⌘/Ctrl+A 连按两次全选整栏。停笔 {Math.round(settings.translationDelayMs / 100) / 10} 秒自动翻译，改英文会锁定该段。</span>
+        <span className="wbar-hint" title={`中英两栏都像普通编辑器：Enter 新段落，粘贴多段自动分段，# 变标题；⌘/Ctrl+Z 撤销，⌘/Ctrl+A 连按两次全选整栏。停笔 ${Math.round(settings.translationDelayMs / 100) / 10} 秒自动翻译，改英文会锁定该段。`}>中英两栏都像普通编辑器：Enter 新段落，粘贴多段自动分段，# 变标题；⌘/Ctrl+Z 撤销，⌘/Ctrl+A 连按两次全选整栏。停笔 {Math.round(settings.translationDelayMs / 100) / 10} 秒自动翻译，改英文会锁定该段。</span>
       </div>
       {!ai.configured && <div className="rd-banner">未配置模型服务，只能写中文；配置后点“翻译待处理段落”。<button className="text-button" onClick={openSettings}>前往设置</button></div>}
       {message && <div className="rd-banner warn">{message}<button className="text-button" onClick={() => setMessage(undefined)}>知道了</button></div>}

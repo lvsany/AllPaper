@@ -10,7 +10,7 @@ export function SettingsView({ settings, status, onSaved }: { settings: Settings
   useEffect(() => { void window.allPaper.usage.get().then(setUsage); }, []);
   const save = async () => { await window.allPaper.settings.save({ ...draft, apiKey: apiKey || undefined }); setApiKey(''); setSaved(true); await onSaved(); setTimeout(() => setSaved(false), 1600); };
   const choose = async () => { const chosen = await window.allPaper.settings.chooseLibrary(); if (chosen) { setDraft((v) => ({ ...v, libraryPath: chosen })); await onSaved(); } };
-  return <section className="settings-page"><header><div><div className="eyebrow">偏好设置</div><h1>设置</h1></div><button className="primary" onClick={() => void save()}>{saved ? <><Check size={16}/> 已保存</> : '保存设置'}</button></header>
+  return <section className="settings-page"><header><div className="page-title"><h1>设置</h1></div><button className="primary" onClick={() => void save()}>{saved ? <><Check size={16}/> 已保存</> : '保存设置'}</button></header>
     <div className="settings-grid">
       <section className="settings-card"><h2><Database size={18}/> 资料库</h2><p>所有研究数据保留在本地；SQLite 索引位于可删除重建的 <code>.index</code> 中。</p><div className="path-box">{status.root ?? '尚未选择资料库目录'}</div><div className="row"><button className="secondary" onClick={() => void choose()}>选择资料库目录</button>{status.configured && <button className="secondary" onClick={async () => { await window.allPaper.library.rebuildIndex(); await onSaved(); }}><RefreshCw size={15}/> 重建索引</button>}</div></section>
       <section className="settings-card"><h2><KeyRound size={18}/> 模型服务</h2><p>翻译、论文问答、划词解释和写作都通过你自己的 API Key 调用模型。相关论文内容、笔记和草稿会发送给下面配置的服务；密钥加密保存在应用数据目录，不写入资料库。</p>
