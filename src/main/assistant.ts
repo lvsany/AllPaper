@@ -1,4 +1,5 @@
-import { assistantSystem, parseGlossary, translationSystem, writingSystem, type WritingStyle } from '../core/prompts';
+import { acceptQuote } from '../core/align';
+import { alignSystem, assistantSystem, parseGlossary, translationSystem, writingSystem, type WritingStyle } from '../core/prompts';
 import type { AssistantMode, AssistantRequest, PaperBundle } from '../shared/types';
 import { AiError, completeNonEmpty, outputBudget, type AiProvider, type ChatMessage, type Completion } from './ai';
 
@@ -42,6 +43,17 @@ export async function translateText(deps: AssistantDeps, text: string, onDelta?:
     messages: [{ role: 'user', content: text }], maxTokens: outputBudget(text.length, 2), onDelta
   }, (c) => deps.usage('划词翻译', c));
   return completion.text.trim();
+}
+
+/** The part of `target` (a translation) that corresponds to `quote` (a span of `source`), copied verbatim; undefined if none. */
+export async function alignTranslation(deps: AssistantDeps, input: { source: string; target: string; quote: string }): Promise<string | undefined> {
+  const provider = require(deps);
+  const completion = await completeNonEmpty(provider, {
+    model: deps.models.translate, system: alignSystem(),
+    messages: [{ role: 'user', content: `英文原文：\n${input.source}\n\n中文译文：\n${input.target}\n\n被划选的原文片段：\n${input.quote}` }],
+    maxTokens: outputBudget(input.quote.length, 3)
+  }, (c) => deps.usage('译文对齐', c));
+  return acceptQuote(completion.text, input.target);
 }
 
 export interface WritingContext { before?: string; after?: string; section?: string; neighbourEnglish?: string; style?: WritingStyle }

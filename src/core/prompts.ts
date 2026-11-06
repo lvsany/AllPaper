@@ -28,6 +28,16 @@ export function glossaryPrompt(entries: GlossaryEntry[]): string {
   return `\n术语表（必须遵循）：\n${lines.join('\n')}`;
 }
 
+/** Finding the part of a translation that corresponds to a highlighted span of the original. */
+export function alignSystem(): string {
+  return [
+    '你会收到一段英文论文原文、它的中文译文，以及原文中被用户划选的片段。',
+    '任务：在中文译文里找出与该片段意思对应的最短连续片段，逐字复制输出。',
+    '规则：1. 输出必须是译文中一字不差存在的连续子串，不要改写、不要补全标点、不要加引号或解释。',
+    '2. 片段跨句时可以输出跨句的连续子串。3. 实在找不到对应内容时只输出 NONE。'
+  ].join('\n');
+}
+
 export function translationSystem(entries: GlossaryEntry[]): string {
   return [
     '你是计算机科学论文的专业翻译。把用户给出的英文论文片段翻译成流畅、准确、符合中文学术写作习惯的简体中文。',

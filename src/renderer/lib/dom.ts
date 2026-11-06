@@ -66,7 +66,7 @@ export function selectionPortions(range: Range, article: Element): Portion[] {
   return portions;
 }
 
-export interface Highlight { id: string; color: string; start: number; end: number; active?: boolean }
+export interface Highlight { id: string; color: string; start: number; end: number; active?: boolean; /** sentence-level guess rather than an exact match */ approx?: boolean }
 
 /** Wraps the given linear ranges in <mark data-ann> elements. */
 export function applyHighlights(el: HTMLElement, highlights: Highlight[]): void {
@@ -76,7 +76,7 @@ export function applyHighlights(el: HTMLElement, highlights: Highlight[]): void 
     for (const segment of inside.reverse()) {
       const mark = document.createElement('mark');
       mark.dataset.ann = item.id;
-      mark.className = `hl hl-${item.color}${item.active ? ' hl-active' : ''}`;
+      mark.className = `hl hl-${item.color}${item.active ? ' hl-active' : ''}${item.approx ? ' hl-approx' : ''}`;
       if (segment.math) {
         (segment.node as Element).replaceWith(mark);
         mark.appendChild(segment.node);

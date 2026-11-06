@@ -224,11 +224,13 @@ export class PaperStore {
     return annotation;
   }
 
-  async updateAnnotation(id: string, annotationId: string, patch: Partial<Pick<Annotation, 'color' | 'comment'>>): Promise<Annotation> {
+  async updateAnnotation(id: string, annotationId: string, patch: Partial<Pick<Annotation, 'color' | 'comment' | 'transQuote' | 'transFor'>>): Promise<Annotation> {
     const list = await this.annotations(id);
     const index = list.findIndex((item) => item.id === annotationId);
     if (index < 0) throw new Error('找不到批注');
-    list[index] = { ...list[index], ...patch };
+    const allowed: Partial<Annotation> = {};
+    for (const key of ['color', 'comment', 'transQuote', 'transFor'] as const) if (key in patch) allowed[key] = patch[key];
+    list[index] = { ...list[index], ...allowed };
     await this.saveAnnotations(id, list);
     return list[index];
   }

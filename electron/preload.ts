@@ -76,6 +76,7 @@ const api: DesktopApi = {
       return { promise, cancel: () => { void ipcRenderer.invoke('ai:cancel', requestId); } };
     },
     translateText: (text) => invoke('ai:translate-text', text),
+    alignTranslation: (input) => invoke('ai:align-translation', input),
     translateWriting: (text, context) => invoke('ai:translate-writing', text, context)
   },
   schedule: {

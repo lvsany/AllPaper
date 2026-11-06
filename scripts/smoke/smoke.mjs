@@ -25,6 +25,7 @@ const model = createServer((req, res) => {
     const user = body.messages?.filter((m) => m.role === 'user').at(-1)?.content ?? '';
     let text = 'ok';
     if (system.includes('专业翻译')) text = `【测试译文】${user.replace(/^（所在章节：[^）]*）\n/, '')}`;
+    else if (system.includes('被用户划选的片段')) text = user.split('被划选的原文片段：\n').at(-1);
     else if (system.includes('科研助手')) text = '测试回答：问题见 [P3]，不存在的引用 [P99999]。';
     if (body.stream) {
       res.writeHead(200, { 'content-type': 'text/event-stream' });
@@ -94,6 +95,12 @@ try {
   await page.waitForSelector('.note-prose blockquote .cite-chip');
   await page.waitForSelector('mark[data-ann]', { timeout: 10_000 });
   step('excerpt becomes a quote with a citation chip in the project note');
+
+  await page.waitForSelector('.rd-trans mark[data-ann]:not(.hl-approx)', { timeout: 30_000 });
+  const paired = await page.evaluate(() => [...document.querySelectorAll('.rd-trans mark[data-ann]')]
+    .every((m) => document.querySelector(`.rd-orig mark[data-ann="${m.dataset.ann}"]`)?.textContent === m.textContent));
+  assert.ok(paired, 'translation marks cover the same words as the highlight in the original');
+  step('highlight carries over to the matching words of the translation');
 
   await page.locator('.rd-tabs button', { hasText: '助手' }).click();
   await page.getByRole('button', { name: '速览本文' }).first().click();

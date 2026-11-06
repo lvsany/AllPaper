@@ -85,6 +85,10 @@ export interface Annotation {
   quotedText: string; prefix: string; suffix: string;
   paragraphId?: string; offsets?: [number, number]; page?: number;
   comment?: string; createdAt: string;
+  /** The corresponding part of the paragraph's translation, as the model quoted it. */
+  transQuote?: string;
+  /** Fingerprint of the translation `transQuote` was taken from. */
+  transFor?: string;
 }
 export type NewAnnotation = Pick<Annotation, 'color' | 'quotedText' | 'prefix' | 'suffix' | 'paragraphId' | 'offsets' | 'comment'>;
 
@@ -157,7 +161,7 @@ export interface DesktopApi {
     onTranslation(listener: (event: { paperId: string; paragraphId: string; zh: string }) => void): () => void;
     annotations(id: string): Promise<Annotation[]>;
     addAnnotation(id: string, input: NewAnnotation): Promise<Annotation>;
-    updateAnnotation(id: string, annotationId: string, patch: Partial<Pick<Annotation, 'color' | 'comment'>>): Promise<Annotation>;
+    updateAnnotation(id: string, annotationId: string, patch: Partial<Pick<Annotation, 'color' | 'comment' | 'transQuote' | 'transFor'>>): Promise<Annotation>;
     deleteAnnotation(id: string, annotationId: string): Promise<void>;
     pathForFile(file: File): string;
   };
@@ -179,6 +183,7 @@ export interface DesktopApi {
     test(): Promise<{ ok: boolean; message: string }>;
     ask(request: Omit<AssistantRequest, 'requestId'>, onDelta: (text: string) => void): { promise: Promise<string>; cancel(): void };
     translateText(text: string): Promise<string>;
+    alignTranslation(input: { source: string; target: string; quote: string }): Promise<string | undefined>;
     translateWriting(text: string, context?: { before?: string; after?: string; section?: string; neighbourEnglish?: string }): Promise<string>;
   };
   schedule: {

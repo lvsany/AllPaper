@@ -102,11 +102,13 @@ h4.rd-heading, h5.rd-heading { font-size: 1em; }
 .rd-actions button { border: 0; background: transparent; width: 26px; height: 26px; padding: 0; border-radius: 6px; color: var(--ink-soft); display: grid; place-items: center; }
 .rd-actions button:hover { background: var(--accent-soft); color: var(--accent); }
 
-mark.hl { color: inherit; border-radius: 2px; cursor: pointer; }
-mark.hl-yellow { background: var(--hl-yellow); }
-mark.hl-red { background: var(--hl-red); }
-mark.hl-green { background: var(--hl-green); }
-mark.hl-blue { background: var(--hl-blue); }
+mark.hl { color: inherit; border-radius: 2px; cursor: pointer; background: var(--hl); }
+mark.hl-yellow { --hl: var(--hl-yellow); }
+mark.hl-red { --hl: var(--hl-red); }
+mark.hl-green { --hl: var(--hl-green); }
+mark.hl-blue { --hl: var(--hl-blue); }
+/* translation side: a sentence-level guess is drawn as a marker underline instead of a full highlight */
+mark.hl-approx { background: linear-gradient(transparent 58%, var(--hl) 0); border-radius: 0; }
 mark.hl-active { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* selection toolbar */

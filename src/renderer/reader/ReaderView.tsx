@@ -11,7 +11,8 @@ import { useWorkspace } from '../workspace';
 import { linearTextOf, locate, selectionPortions, type Highlight, type Portion } from '../lib/dom';
 import { AnnotationsPanel } from './AnnotationsPanel';
 import { Block, type DisplayMode } from './Block';
-import { blockHtml, translationText } from './html';
+import { blockHtml, translationHtml, translationText } from './html';
+import { fingerprint, translationSpan } from '../../core/align';
 import { SelectionBar, type SelectionRect } from './SelectionBar';
 import { ImageViewer, type ViewerImage } from './ImageViewer';
 import { decodePosition, encodePosition } from '../../core/reading-position';
@@ -234,28 +235,68 @@ export function ReaderView({ paper, anchor, onBack, onOpenPaper }: Props) {
   const headings = useMemo(() => paragraphs.filter((p) => p.type === 'heading' && (p.level ?? 1) <= 2), [paragraphs]);
 
   // ---- annotations ---------------------------------------------------------------
-  const { lost, highlightsByBlock } = useMemo(() => {
-    const locations = new Map<string, [number, number]>();
-    const lost = new Set<string>();
+  // linear text of the original and of the translation, for the paragraphs that carry annotations
+  const annotatedIds = useMemo(() => [...new Set(annotations.map((a) => a.paragraphId).filter((id): id is string => Boolean(id)))], [annotations]);
+  const sourceTexts = useMemo(() => {
     const texts = new Map<string, string>();
+    for (const id of annotatedIds) { const p = byId.get(id); if (p) texts.set(id, linearTextOf(blockHtml(p, assetBase))); }
+    return texts;
+  }, [annotatedIds, byId, assetBase]);
+  const targetTexts = useMemo(() => {
+    const texts = new Map<string, string>();
+    for (const id of annotatedIds) { const p = byId.get(id); const zh = translations[id]; if (p && zh) texts.set(id, linearTextOf(translationHtml(zh, p, assetBase))); }
+    return texts;
+  }, [annotatedIds, byId, assetBase, translations]);
+
+  const { lost, highlightsByBlock } = useMemo(() => {
+    const lost = new Set<string>();
+    const highlightsByBlock = new Map<string, { list: Highlight[]; trans: Highlight[]; key: string }>();
     for (const annotation of annotations) {
-      const p = annotation.paragraphId ? byId.get(annotation.paragraphId) : undefined;
-      if (!p) { lost.add(annotation.id); continue; }
-      if (!texts.has(p.id)) texts.set(p.id, linearTextOf(blockHtml(p, assetBase)));
-      const found = locate(annotation, texts.get(p.id)!);
-      if (found) locations.set(annotation.id, found); else lost.add(annotation.id);
-    }
-    const highlightsByBlock = new Map<string, { list: Highlight[]; key: string }>();
-    for (const annotation of annotations) {
-      const found = locations.get(annotation.id);
-      if (!found || !annotation.paragraphId) continue;
-      const entry = highlightsByBlock.get(annotation.paragraphId) ?? { list: [], key: '' };
-      entry.list.push({ id: annotation.id, color: annotation.color, start: found[0], end: found[1], active: annotation.id === activeAnnotation });
-      entry.key += `${annotation.id}:${annotation.color}:${found[0]}-${found[1]}:${annotation.id === activeAnnotation ? 1 : 0};`;
-      highlightsByBlock.set(annotation.paragraphId, entry);
+      const id = annotation.paragraphId;
+      const source = id ? sourceTexts.get(id) : undefined;
+      const found = source !== undefined ? locate(annotation, source) : undefined;
+      if (!id || source === undefined || !found) { lost.add(annotation.id); continue; }
+      const active = annotation.id === activeAnnotation;
+      const entry = highlightsByBlock.get(id) ?? { list: [], trans: [], key: '' };
+      entry.list.push({ id: annotation.id, color: annotation.color, start: found[0], end: found[1], active });
+      entry.key += `${annotation.id}:${annotation.color}:${found[0]}-${found[1]}:${active ? 1 : 0}`;
+      const target = targetTexts.get(id);
+      const mapped = target ? translationSpan(source, target, found[0], found[1], annotation.transQuote || undefined) : undefined;
+      if (mapped) {
+        entry.trans.push({ id: annotation.id, color: annotation.color, start: mapped.span[0], end: mapped.span[1], active, approx: mapped.approx });
+        entry.key += `>${mapped.span[0]}-${mapped.span[1]}${mapped.approx ? '~' : ''}`;
+      }
+      entry.key += ';';
+      highlightsByBlock.set(id, entry);
     }
     return { lost, highlightsByBlock };
-  }, [annotations, byId, assetBase, activeAnnotation]);
+  }, [annotations, sourceTexts, targetTexts, activeAnnotation]);
+
+  // Ask the model once per annotation and translation which words of the translation correspond to the highlight.
+  const aligning = useRef(new Set<string>());
+  useEffect(() => {
+    if (!aiReady) return;
+    const jobs: Array<{ annotation: Annotation; source: string; target: string; stamp: string }> = [];
+    for (const annotation of annotations) {
+      const id = annotation.paragraphId;
+      const source = id ? sourceTexts.get(id) : undefined;
+      const target = id ? targetTexts.get(id) : undefined;
+      if (!source || !target) continue;
+      const stamp = fingerprint(target);
+      const key = `${annotation.id}:${stamp}`;
+      if (annotation.transFor === stamp || aligning.current.has(key)) continue;
+      aligning.current.add(key);
+      jobs.push({ annotation, source, target, stamp });
+    }
+    if (!jobs.length) return;
+    void (async () => {
+      for (const job of jobs) {
+        const quote = await window.allPaper.ai.alignTranslation({ source: job.source, target: job.target, quote: job.annotation.quotedText }).catch(() => undefined);
+        const updated = await window.allPaper.papers.updateAnnotation(paper.id, job.annotation.id, { transQuote: quote ?? '', transFor: job.stamp }).catch(() => undefined);
+        if (updated) setAnnotations((current) => current.map((a) => (a.id === updated.id ? { ...updated, color: a.color, comment: a.comment } : a)));
+      }
+    })();
+  }, [annotations, sourceTexts, targetTexts, aiReady, paper.id]);
 
   const createAnnotations = async (portions: Portion[], color: string, comment?: string): Promise<Annotation[]> => {
     const created: Annotation[] = [];
@@ -436,7 +477,7 @@ export function ReaderView({ paper, anchor, onBack, onOpenPaper }: Props) {
                       return (
                         <Block
                           key={p.id} p={p} assetBase={assetBase} mode={mode} zh={translations[p.id]}
-                          pending={pending.has(p.id)} failed={failed.has(p.id)} highlights={hl?.list ?? NO_HIGHLIGHTS} highlightKey={hl?.key ?? ''}
+                          pending={pending.has(p.id)} failed={failed.has(p.id)} highlights={hl?.list ?? NO_HIGHLIGHTS} transHighlights={hl?.trans ?? NO_HIGHLIGHTS} highlightKey={hl?.key ?? ''}
                           canTranslate={aiReady} onRetranslate={retranslate}
                           onExplain={(block) => ask('请解释这一段在讲什么，以及它在全文中的作用。', block.text, 'explain')}
                           onExcerpt={(block) => void excerpt([wholeParagraph(block)])}

@@ -14,7 +14,7 @@ import { ScheduleStore } from '../src/main/schedule-store';
 import { MemoStore } from '../src/main/memo-store';
 import { citedPapers, draftToLatex } from '../src/core/latex';
 import { createProvider, MockProvider, AiError, type AiProvider, type Completion } from '../src/main/ai';
-import { runAssistant, searchQueries, translateText, translateWriting, type AssistantDeps } from '../src/main/assistant';
+import { alignTranslation, runAssistant, searchQueries, translateText, translateWriting, type AssistantDeps } from '../src/main/assistant';
 import { DEFAULT_GLOSSARY, parseGlossary } from '../src/core/prompts';
 import { defaultSettings, type AssistantRequest, type LibraryStatus, type Settings } from '../src/shared/types';
 
@@ -394,6 +394,9 @@ app.whenReady().then(async () => {
     } finally { askControllers.delete(request.requestId); }
   });
   ipcMain.handle('ai:cancel', (_e, requestId: string) => { askControllers.get(requestId)?.abort(); });
+  ipcMain.handle('ai:align-translation', async (_e, input: { source: string; target: string; quote: string }) => {
+    try { return await alignTranslation(await assistantDeps(), input); } catch { return undefined; }
+  });
   ipcMain.handle('ai:translate-text', async (_e, text: string) => translateText(await assistantDeps(), text));
   ipcMain.handle('ai:translate-writing', async (_e, text: string, context) => translateWriting(await assistantDeps(), text, context));
   ipcMain.handle('schedule:list', () => schedule().list());

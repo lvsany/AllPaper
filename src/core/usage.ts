@@ -34,7 +34,7 @@ export const EMPTY_PRICES: Prices = {
 
 /** Which model setting each recorded task is billed against. */
 const TASK_TIER: Record<string, ModelTier> = {
-  '阅读翻译': 'translate', '划词翻译': 'translate',
+  '阅读翻译': 'translate', '划词翻译': 'translate', '译文对齐': 'translate',
   '论文问答': 'write', '划词解释': 'write', '检索改写': 'write', '双栏写作翻译': 'write',
   '点子扩展': 'reason', '预实验设计': 'reason'
 };

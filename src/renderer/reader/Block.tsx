@@ -15,6 +15,8 @@ interface BlockProps {
   pending: boolean;
   failed: boolean;
   highlights: Highlight[];
+  /** The same highlights, mapped onto the translation. */
+  transHighlights: Highlight[];
   /** Changes whenever the highlights of this block change, so memo can skip stable blocks. */
   highlightKey: string;
   canTranslate: boolean;
@@ -26,8 +28,9 @@ interface BlockProps {
 
 const headingTag = (p: Paragraph) => p.type === 'title' ? 'h1' : `h${Math.min(5, (p.level ?? 1) + 1)}`;
 
-function BlockImpl({ p, assetBase, mode, zh, pending, failed, highlights, canTranslate, onRetranslate, onExplain, onExcerpt, onCopy }: BlockProps) {
+function BlockImpl({ p, assetBase, mode, zh, pending, failed, highlights, transHighlights, canTranslate, onRetranslate, onExplain, onExcerpt, onCopy }: BlockProps) {
   const original = useRef<HTMLElement>(null);
+  const translated = useRef<HTMLDivElement>(null);
   const translatable = TRANSLATABLE.has(p.type) && Boolean(p.text);
   const showOriginal = mode !== 'translation' || !translatable || !zh;
   const showTranslation = mode !== 'original' && translatable && (Boolean(zh) || pending || failed);
@@ -40,6 +43,14 @@ function BlockImpl({ p, assetBase, mode, zh, pending, failed, highlights, canTra
     if (highlights.length) applyHighlights(el, highlights);
   }, [html, highlights, showOriginal]);
 
+  const zhHtml = zh ? translationHtml(zh, p, assetBase) : '';
+  useLayoutEffect(() => {
+    const el = translated.current;
+    if (!el) return;
+    el.innerHTML = zhHtml;
+    if (transHighlights.length) applyHighlights(el, transHighlights);
+  }, [zhHtml, transHighlights, showTranslation]);
+
   const tag = p.type === 'title' || p.type === 'heading' ? headingTag(p) : p.type === 'paragraph' ? 'p' : 'div';
   const className = `rd-orig rd-${p.type}`;
   const body = showOriginal ? createElement(tag, { ref: original, className, 'data-orig': '', 'data-pid': p.id }) : null;
@@ -50,7 +61,7 @@ function BlockImpl({ p, assetBase, mode, zh, pending, failed, highlights, canTra
       {body}
       {showTranslation && (
         zh
-          ? <div className={`rd-trans rd-trans-${p.type}`} dangerouslySetInnerHTML={{ __html: translationHtml(zh, p, assetBase) }} />
+          ? <div ref={translated} className={`rd-trans rd-trans-${p.type}`} data-trans data-pid={p.id} />
           : failed
             ? <button className="rd-trans-failed" onClick={() => onRetranslate(p)}><RotateCw size={12} /> 翻译失败，点击重试</button>
             : <div className="rd-trans rd-trans-loading" aria-label="翻译中"><i /><i /></div>
